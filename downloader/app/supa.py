@@ -8,10 +8,12 @@ _client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=300.0))
 
 
 def _service_headers(extra: dict | None = None) -> dict:
-    h = {
-        "apikey": config.SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {config.SUPABASE_SERVICE_ROLE_KEY}",
-    }
+    key = config.SUPABASE_SERVICE_ROLE_KEY
+    h = {"apikey": key}
+    # Las llaves nuevas (sb_secret_...) no son JWT: basta con el header apikey.
+    # Las legacy (service_role, eyJ...) también van como Bearer.
+    if not key.startswith("sb_"):
+        h["Authorization"] = f"Bearer {key}"
     if extra:
         h.update(extra)
     return h
