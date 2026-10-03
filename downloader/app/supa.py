@@ -33,7 +33,7 @@ async def get_user(access_token: str) -> dict | None:
 async def get_song(song_id: str) -> dict | None:
     r = await _client.get(
         f"{config.SUPABASE_URL}/rest/v1/songs",
-        params={"id": f"eq.{song_id}", "select": "id,group_id,title,artist,thumbnail_url,duration_sec"},
+        params={"id": f"eq.{song_id}", "select": "id,group_id,title,artist,thumbnail_url,duration_sec,audio_status"},
         headers=_service_headers(),
     )
     r.raise_for_status()
@@ -74,3 +74,14 @@ async def upload_audio(path: str, file_path: str) -> None:
     )
     if r.status_code >= 300:
         raise RuntimeError(f"Storage respondió {r.status_code}: {r.text[:200]}")
+
+
+async def youtube_title(url: str) -> str | None:
+    """Título del video vía oEmbed (no lo afecta el bloqueo anti-bots)."""
+    try:
+        r = await _client.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"}, timeout=15)
+        if r.status_code == 200:
+            return r.json().get("title")
+    except Exception:  # noqa: BLE001
+        pass
+    return None

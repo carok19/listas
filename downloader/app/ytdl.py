@@ -13,6 +13,16 @@ from . import config
 class DownloadError(Exception):
     """Error con mensaje en español listo para mostrar al usuario."""
 
+    def __init__(self, message: str, blocked: bool = False):
+        super().__init__(message)
+        # True cuando el sitio bloqueó al servidor (no es culpa del link).
+        self.blocked = blocked
+
+
+def is_blocked(err: Exception) -> bool:
+    low = str(err).lower()
+    return any(s in low for s in ("sign in to confirm", "not a bot", "429", "too many requests"))
+
 
 def _base_opts() -> dict:
     opts: dict = {
@@ -129,7 +139,7 @@ def download_mp3(url: str, job_id: str, on_progress: Callable[[float], None]) ->
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except Exception as e:  # noqa: BLE001
-        raise DownloadError(friendly_error(e)) from e
+        raise DownloadError(friendly_error(e), blocked=is_blocked(e)) from e
 
     if info is None:
         raise DownloadError("No se pudo leer la información del video.")
@@ -138,3 +148,27 @@ def download_mp3(url: str, job_id: str, on_progress: Callable[[float], None]) ->
         reason = check_duration(info, incomplete=False)
         raise DownloadError((reason + " Sube el MP3 manualmente.") if reason else "No se generó el MP3. Sube el MP3 manualmente.")
     return files[0], info
+
+
+def find_soundcloud(query: str, target_duration: int | None) -> str | None:
+    """Busca la canción en SoundCloud (plan B cuando YouTube bloquea al servidor).
+
+    Descarta previews de 30 s y resultados con duración muy distinta.
+    """
+    opts = _base_opts() | {"extract_flat": "in_playlist", "skip_download": True}
+    opts.pop("cookiefile", None)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"scsearch8:{query}", download=False)
+    except Exception:  # noqa: BLE001
+        return None
+    for entry in (info or {}).get("entries") or []:
+        if not entry or not entry.get("url"):
+            continue
+        dur = entry.get("duration")
+        if dur and dur < 60:
+            continue
+        if target_duration and dur and abs(dur - target_duration) > max(30, target_duration * 0.25):
+            continue
+        return entry["url"]
+    return None

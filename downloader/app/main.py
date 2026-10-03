@@ -110,7 +110,23 @@ async def run_job(job: Job) -> None:
         job.progress = round(p, 1)
 
     try:
-        mp3, info = await loop.run_in_executor(None, ytdl.download_mp3, job.url, job.id, on_progress)
+        try:
+            mp3, info = await loop.run_in_executor(None, ytdl.download_mp3, job.url, job.id, on_progress)
+        except ytdl.DownloadError as e:
+            if not e.blocked:
+                raise
+            # Plan B: YouTube bloqueó al servidor → buscar la misma canción en SoundCloud.
+            sc_url = await find_alternative(job)
+            if not sc_url:
+                raise ytdl.DownloadError(
+                    "YouTube bloqueó la descarga desde el servidor y no encontramos la canción en SoundCloud. "
+                    "Sube el MP3 manualmente."
+                ) from e
+            log.info("job %s: YouTube bloqueado, usando SoundCloud %s", job.id, sc_url)
+            job.progress = 0
+            mp3, info = await loop.run_in_executor(None, ytdl.download_mp3, sc_url, job.id, on_progress)
+            # Conservar título/artista que ya tenía la canción (los de SoundCloud suelen venir sucios).
+            info = {k: v for k, v in info.items() if k not in ("thumbnail",)} | {"_fallback": "soundcloud"}
         job.status = "uploading"
         job.progress = None
         path = f"{job.group_id}/{job.song_id}.mp3"
@@ -125,7 +141,13 @@ async def run_job(job: Job) -> None:
             patch.pop("duration_sec")
         if info.get("thumbnail"):
             patch["thumbnail_url"] = info["thumbnail"]
-        if job.fill_metadata:
+        if job.fill_metadata and info.get("_fallback"):
+            yt_title = await supa.youtube_title(job.url)
+            if yt_title:
+                title, artist = ytdl.guess_title_artist({"title": yt_title})
+                patch["title"] = title[:200]
+                patch["artist"] = artist
+        elif job.fill_metadata:
             title, artist = ytdl.guess_title_artist(info)
             patch["title"] = title[:200]
             patch["artist"] = artist
@@ -143,6 +165,22 @@ async def run_job(job: Job) -> None:
             log.exception("no se pudo marcar el error en la canción %s", job.song_id)
     finally:
         shutil.rmtree(f"{config.WORK_DIR}/{job.id}", ignore_errors=True)
+
+
+async def find_alternative(job: Job) -> str | None:
+    song = await supa.get_song(job.song_id)
+    title = (song or {}).get("title") or ""
+    artist = (song or {}).get("artist") or ""
+    duration = (song or {}).get("duration_sec")
+    if not title or title.startswith("Descargando"):
+        yt_title = await supa.youtube_title(job.url)
+        if not yt_title:
+            return None
+        title, artist = ytdl.guess_title_artist({"title": yt_title})
+        artist = artist or ""
+    query = f"{artist} {title}".strip()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, ytdl.find_soundcloud, query, duration)
 
 
 async def worker(n: int) -> None:
