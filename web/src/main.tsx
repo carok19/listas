@@ -4,10 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { registerSW } from 'virtual:pwa-register'
 import { AuthProvider } from './hooks/useAuth'
+import { isNative } from './lib/platform'
 import App from './App'
 import './index.css'
 
-registerSW({ immediate: true })
+// En la APK los archivos ya vienen dentro de la app; el service worker es solo para la web.
+if (!isNative) registerSW({ immediate: true })
 
 const queryClient = new QueryClient({
   defaultOptions: {

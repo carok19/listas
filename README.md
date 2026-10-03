@@ -4,7 +4,7 @@ App web instalable (PWA) para grupos de alabanza: biblioteca de canciones con le
 
 ```
 listas/
-├── web/          Frontend (React + Vite + TS + Tailwind, PWA) → Vercel
+├── web/          App (React + Vite + TS + Tailwind): PWA → Vercel, y APK Android (Capacitor, web/android)
 ├── downloader/   Servicio de descarga (FastAPI + yt-dlp + ffmpeg, Docker) → Render
 ├── supabase/     Migraciones SQL (tablas, RLS, Storage)
 └── render.yaml   Blueprint de Render
@@ -37,6 +37,23 @@ La app solo conoce su URL y este contrato. Si deja de funcionar, se puede reempl
 - **Cookies**: si YouTube bloquea la IP del servidor ("Sign in to confirm you're not a bot"), exporta las cookies de una cuenta de YouTube en formato Netscape y configúralas (ver más abajo).
 
 ---
+
+## APK Android (sin Vercel ni Render)
+
+GitHub Actions compila la APK sola cada vez que cambia algo en `web/` (workflow **APK Android**) y la publica en *Releases*.
+
+- **Link fijo de descarga:** https://github.com/carok19/listas/releases/latest/download/Alabanza.apk
+- Para instalarla: abre el link en el celular, descarga el archivo y ábrelo. La primera vez, Android pide permitir "instalar apps de este origen".
+- Las actualizaciones se instalan encima de la versión anterior sin perder la sesión ni las listas descargadas, porque se firman siempre con la misma llave (`web/android/app/alabanza.keystore`).
+- Para compilarla a mano: pestaña *Actions* → **APK Android** → *Run workflow*.
+
+**Configuración en Supabase para la APK** (Authentication):
+1. *URL Configuration → Redirect URLs*: agrega `com.alabanza.app://**`. Sirve para entrar con Google o con enlace por correo desde la APK.
+2. *Sign In / Providers → Email*: desactiva **Confirm email** para que la gente cree su cuenta con correo y contraseña al instante, sin depender del correo (Supabase gratis manda muy pocos por hora).
+
+**Qué funciona sin servidor de descarga:** todo, excepto *Buscar* y *Link* en "Agregar canción". Las canciones se agregan subiendo el MP3. La letra automática de LRCLIB sí funciona. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
+
+> La llave de firma está en el repo para que todo funcione sin configurar secretos. Si el repo es público, cualquiera podría firmar una APK que se haga pasar por esta. Para un uso más serio, crea una llave propia y ponla en los secretos `ANDROID_KEYSTORE_*`. El workflow ya lee esas variables de entorno si existen.
 
 ## Despliegue
 

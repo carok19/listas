@@ -1,0 +1,83 @@
+# Compila la APK de Android y la publica en Releases.
+# Link fijo para descargar la última versión:
+#   https://github.com/carok19/listas/releases/latest/download/Alabanza.apk
+name: APK Android
+
+on:
+  push:
+    paths:
+      - 'web/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      # Valores públicos (la anon/publishable key está pensada para ir en la app).
+      VITE_SUPABASE_URL: https://embojyywfplaihikfcyw.supabase.co
+      VITE_SUPABASE_ANON_KEY: sb_publishable_zNEydEd2lXjY0ZTHghPJ_Q_ARA4Dy8D
+      # Opcional: si algún día hay servicio de descarga, ponlo en
+      # Settings → Secrets and variables → Actions → Variables.
+      VITE_DOWNLOADER_URL: ${{ vars.DOWNLOADER_URL }}
+      VITE_DOWNLOADER_TOKEN: ${{ vars.DOWNLOADER_TOKEN }}
+      VITE_WEB_URL: ${{ vars.WEB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar la app web
+        run: npm run build
+
+      - name: Copiar a Android
+        run: npx cap sync android
+
+      - name: Compilar APK
+        working-directory: web/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Alabanza.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alabanza-apk
+          path: Alabanza.apk
+
+      - name: Publicar en Releases
+        if: github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" Alabanza.apk \
+            --target "${{ github.sha }}" \
+            --title "Alabanza $TAG" \
+            --notes "Descarga **Alabanza.apk** en tu celular Android y ábrela para instalar. Si es la primera vez, Android te pedirá permitir instalar apps de este origen." \
+            --latest

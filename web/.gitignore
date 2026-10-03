@@ -3,3 +3,6 @@ dist
 dev-dist
 .env.local
 *.local
+android/app/build/
+android/.gradle/
+android/build/

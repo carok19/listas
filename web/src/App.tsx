@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect, type ReactNode } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { rememberNext, useAuth } from './hooks/useAuth'
 import { useGroupId } from './hooks/useGroup'
 import { supabaseConfigured } from './lib/supabase'
+import { setupNative } from './lib/native'
 import { GroupNav, OfflineBanner } from './components/Layout'
 import { PageSpinner } from './components/ui'
 import Login from './pages/Login'
@@ -39,6 +40,9 @@ function GroupLayout() {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+  useEffect(() => setupNative((p) => navigate(p)), [navigate])
+
   if (!supabaseConfigured) {
     return (
       <div className="p-6 text-sm text-slate-300">

@@ -17,12 +17,20 @@ export interface LyricsMatch {
   lyrics: string
 }
 
+import { CapacitorHttp } from '@capacitor/core'
 import { lyricsViaDownloader } from './downloader'
+import { isNative } from './platform'
 
 const BASE = 'https://lrclib.net/api'
 
 /** Consulta LRCLIB directo; si el navegador no puede (CORS/red), usa el servicio de descarga. */
 async function lrcSearch(params: Record<string, string>): Promise<LrcResult[]> {
+  if (isNative) {
+    // Petición nativa: sin restricciones CORS del WebView.
+    const res = await CapacitorHttp.get({ url: `${BASE}/search`, params, headers: { 'Lrclib-Client': 'Alabanza (github.com/carok19/listas)' } })
+    if (res.status !== 200) throw new Error(String(res.status))
+    return (typeof res.data === 'string' ? JSON.parse(res.data) : res.data) as LrcResult[]
+  }
   try {
     const res = await fetch(`${BASE}/search?${new URLSearchParams(params)}`)
     if (!res.ok) throw new Error(String(res.status))
