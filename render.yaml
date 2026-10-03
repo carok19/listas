@@ -1,0 +1,23 @@
+# Blueprint de Render: New → Blueprint → elegir este repo.
+services:
+  - type: web
+    name: alabanza-downloader
+    runtime: docker
+    rootDir: downloader
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: virginia
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        value: https://embojyywfplaihikfcyw.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: API_TOKEN
+        sync: false
+      - key: MAX_CONCURRENT_JOBS
+        value: "2"
+      - key: MP3_QUALITY
+        value: "128"
