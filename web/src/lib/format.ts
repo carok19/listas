@@ -19,6 +19,27 @@ export function defaultSetlistTitle(iso: string) {
   return `${wd.charAt(0).toUpperCase()}${wd.slice(1)} ${d} ${mon}`
 }
 
+/** Para comparar títulos: sin acentos, mayúsculas, signos ni "(En vivo)". */
+export function normalizeTitle(s: string) {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\(.*?\)|\[.*?\]/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/** Título y artista a partir del nombre de un MP3 ("01 - Artista - Canción.mp3"). */
+export function guessFromFileName(name: string) {
+  const base = name
+    .replace(/\.mp3$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/^\s*(?:\d{1,3}\s*[-.)]\s*|0\d\s+)/, '')
+    .trim()
+  return guessTitleArtist(base)
+}
+
 /** Separa "Artista - Canción (Video Oficial)" en título y artista. */
 export function guessTitleArtist(raw: string, channel?: string | null) {
   const clean = raw

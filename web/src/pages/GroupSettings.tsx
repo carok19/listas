@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
+import { Clipboard } from '@capacitor/clipboard'
 import { deleteGroup, listMembers, regenerateInviteCode, removeMember, renameGroup, setMemberRole } from '../lib/api'
 import { errorMessage, supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { APK_DOWNLOAD_URL, APP_SCHEME, WEB_URL } from '../lib/platform'
+import { APK_DOWNLOAD_URL, WEB_URL } from '../lib/platform'
+import { inviteLink as linkFor, inviteText, shareInvite } from '../lib/invite'
 import { useGroup } from '../hooks/useGroup'
 import { GroupsLink, Header, Page } from '../components/Layout'
 import { Badge, Button, Card, ErrorBox, Input, Modal, PageSpinner } from '../components/ui'
@@ -16,20 +18,16 @@ export default function GroupSettings() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [qrOpen, setQrOpen] = useState(false)
+  // Sin versión web, el QR puede llevar a descargar la APK o abrir la app ya instalada.
+  const [qrMode, setQrMode] = useState<'app' | 'join'>('app')
   const [copied, setCopied] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState<string | null>(null)
 
   const members = useQuery({ queryKey: ['members', groupId], queryFn: () => listMembers(groupId) })
 
-  // En la web el link abre la app directamente; en la APK compartimos el
-  // link de descarga + el código, y el QR abre la app si ya está instalada.
-  const inviteLink = group ? (WEB_URL ? `${WEB_URL}/unirse/${group.invite_code}` : `${APP_SCHEME}://unirse/${group.invite_code}`) : ''
-  const shareText = group
-    ? WEB_URL
-      ? `Únete a "${group.name}" en la app de Alabanza para ver las canciones y listas 🎶\n${inviteLink}\nCódigo: ${group.invite_code}`
-      : `Únete a "${group.name}" en la app de Alabanza 🎶\n1) Descarga la app (Android): ${APK_DOWNLOAD_URL}\n2) Crea tu cuenta y toca "Unirme con código": ${group.invite_code}`
-    : ''
+  const inviteLink = group ? linkFor(group) : ''
+  const shareText = group ? inviteText(group) : ''
 
   const invalidateGroup = () => {
     qc.invalidateQueries({ queryKey: ['group', groupId] })
@@ -75,7 +73,7 @@ export default function GroupSettings() {
 
   async function copy(text: string, what: string) {
     try {
-      await navigator.clipboard.writeText(text)
+      await Clipboard.write({ string: text })
       setCopied(what)
       setTimeout(() => setCopied(null), 2000)
     } catch {
@@ -83,19 +81,8 @@ export default function GroupSettings() {
     }
   }
 
-  async function share() {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: group?.name, text: shareText })
-        return
-      } catch {
-        /* cancelado: usar WhatsApp */
-      }
-    }
-    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
-  }
-
   if (!group) return <PageSpinner />
+  const qrValue = WEB_URL || qrMode === 'join' ? inviteLink : APK_DOWNLOAD_URL
 
   return (
     <>
@@ -125,7 +112,7 @@ export default function GroupSettings() {
           </button>
           <p className="h-4 text-center text-xs text-emerald-400">{copied === 'code' ? '¡Código copiado!' : copied === 'link' ? '¡Link copiado!' : ''}</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <Button className="bg-emerald-600 active:bg-emerald-700" onClick={share}>WhatsApp</Button>
+            <Button className="bg-emerald-600! active:bg-emerald-700!" onClick={() => shareInvite(group)}>WhatsApp</Button>
             <Button variant="secondary" onClick={() => setQrOpen(true)}>QR</Button>
             <Button variant="secondary" onClick={() => copy(WEB_URL ? inviteLink : shareText, 'link')}>Copiar link</Button>
           </div>
@@ -212,12 +199,34 @@ export default function GroupSettings() {
 
       <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="Escanea para unirte">
         <div className="flex flex-col items-center">
+          {!WEB_URL && (
+            <div className="mb-4 grid w-full grid-cols-2 gap-1 rounded-xl bg-slate-950 p-1">
+              {(
+                [
+                  ['app', '1. Descargar la app'],
+                  ['join', '2. Ya tengo la app'],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setQrMode(mode)}
+                  className={`rounded-lg py-2 text-xs font-semibold ${qrMode === mode ? 'bg-indigo-600 text-white' : 'text-slate-300'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="rounded-2xl bg-white p-4">
-            <QRCodeSVG value={inviteLink} size={240} />
+            <QRCodeSVG value={qrValue} size={240} />
           </div>
           <p className="mt-3 font-mono text-2xl font-bold tracking-[0.3em]">{group.invite_code}</p>
           <p className="mt-1 text-center text-xs text-slate-400">
-            {WEB_URL ? 'Abre la cámara del celular y apunta al código.' : 'Si ya tiene la app instalada, el QR la abre. Si no, que la descargue y escriba el código.'}
+            {WEB_URL
+              ? 'Abre la cámara del celular y apunta al código.'
+              : qrMode === 'app'
+                ? 'Con la cámara del celular (Android) descarga la app. Después crea tu cuenta, toca "Unirme con código" y escribe el código de arriba.'
+                : 'Si ya tiene la app instalada, este QR la abre y lo une al grupo.'}
           </p>
         </div>
       </Modal>

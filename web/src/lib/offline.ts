@@ -80,12 +80,16 @@ export async function removeSavedSetlist(id: string) {
   }
 }
 
+/** El MP3 guardado para usar sin internet, si está en este dispositivo. */
+export async function cachedAudioBlob(path: string): Promise<Blob | null> {
+  if (!offlineSupported) return null
+  const res = await (await caches.open(AUDIO_CACHE)).match(audioKey(path))
+  return res ? res.blob() : null
+}
+
 /** URL reproducible: primero el caché local, si no, URL firmada de Supabase. */
 export async function playableAudioUrl(path: string): Promise<{ url: string; local: boolean }> {
-  if (offlineSupported) {
-    const audio = await caches.open(AUDIO_CACHE)
-    const res = await audio.match(audioKey(path))
-    if (res) return { url: URL.createObjectURL(await res.blob()), local: true }
-  }
+  const cached = await cachedAudioBlob(path)
+  if (cached) return { url: URL.createObjectURL(cached), local: true }
   return { url: await signedAudioUrl(path), local: false }
 }

@@ -29,7 +29,7 @@ export interface Job {
 
 export class DownloaderError extends Error {}
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function call<T>(path: string, init?: RequestInit, as: 'json' | 'text' = 'json'): Promise<T> {
   if (!BASE) throw new DownloaderError('El servicio de descarga no está configurado. Sube el MP3 manualmente.')
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
@@ -49,6 +49,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       'No se pudo contactar el servicio de descarga. Puede estar despertando (tarda ~1 minuto); intenta de nuevo o sube el MP3 manualmente.',
     )
   }
+  if (res.ok && as === 'text') return (await res.text()) as T
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new DownloaderError(body.detail || body.error || `Error del servicio de descarga (${res.status}).`)
   return body as T
@@ -76,4 +77,9 @@ export function wakeDownloader() {
 
 export function lyricsViaDownloader(params: Record<string, string>) {
   return call<unknown[]>(`/lyrics?${new URLSearchParams(params)}`)
+}
+
+/** Lee una página de un sitio de letras (letras.com, etc.), que el navegador no puede pedir directo por CORS. */
+export function pageViaDownloader(url: string) {
+  return call<string>(`/page?${new URLSearchParams({ url })}`, undefined, 'text')
 }

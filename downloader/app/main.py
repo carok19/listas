@@ -6,6 +6,7 @@ Contrato HTTP (si se reemplaza el servicio, basta con respetarlo):
   POST /download {url, song_id, fill_metadata?} -> Job
   GET  /jobs/{id}                   -> Job
   GET  /lyrics?track_name=&artist_name=&q=  -> respuesta de LRCLIB /api/search (respaldo)
+  GET  /page?url=                   -> HTML/texto de una página de un sitio de letras permitido
   Job = {id, song_id, status: queued|downloading|uploading|done|error, progress, error}
 
 Autenticación: header "Authorization: Bearer <access_token de Supabase>".
@@ -19,11 +20,13 @@ import shutil
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from urllib.parse import urljoin, urlparse
 
+import httpx
 import yt_dlp
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from . import config, supa, ytdl
@@ -281,3 +284,44 @@ async def lyrics(
     if r.status_code != 200:
         raise HTTPException(502, "No se pudo consultar LRCLIB.")
     return r.json()
+
+
+PAGE_MAX_BYTES = 3_000_000
+
+
+@app.get("/page", response_class=PlainTextResponse)
+async def page(
+    request: Request,
+    url: str = Query(min_length=10, max_length=1000),
+    _user: dict = Depends(current_user),
+) -> PlainTextResponse:
+    """Lee una página de letras (letras.com, etc.) para la versión web, que no puede pedirla directo por CORS."""
+    headers = {
+        "User-Agent": request.headers.get("user-agent") or "Alabanza (https://github.com/carok19/listas)",
+        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+        "Accept-Language": request.headers.get("accept-language") or "es",
+    }
+    # Redirecciones a mano, para revisar que cada salto siga en un sitio permitido.
+    for _ in range(4):
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() not in config.LYRICS_HOSTS:
+            raise HTTPException(400, "Ese sitio no está permitido.")
+        try:
+            async with supa._client.stream("GET", url, headers=headers, timeout=20) as r:
+                if r.is_redirect:
+                    url = urljoin(url, r.headers["location"])
+                    continue
+                if r.status_code == 404:
+                    raise HTTPException(404, "No se encontró la página.")
+                if r.status_code >= 400:
+                    raise HTTPException(502, f"El sitio respondió con error {r.status_code}.")
+                body = bytearray()
+                async for chunk in r.aiter_bytes():
+                    body += chunk
+                    if len(body) > PAGE_MAX_BYTES:
+                        raise HTTPException(502, "La página es demasiado grande.")
+                return PlainTextResponse(body.decode(r.encoding or "utf-8", errors="replace"))
+        except httpx.HTTPError as e:
+            log.warning("no se pudo leer %s: %r", url, e)
+            raise HTTPException(502, "No se pudo abrir la página.") from e
+    raise HTTPException(502, "La página redirige demasiadas veces.")

@@ -136,10 +136,12 @@ function readDuration(file: File): Promise<number | null> {
   })
 }
 
-export async function signedAudioUrl(path: string): Promise<string> {
+/** URL temporal del MP3. Con `downloadAs`, el navegador lo descarga con ese nombre en vez de reproducirlo. */
+export async function signedAudioUrl(path: string, downloadAs?: string): Promise<string> {
   const { data, error } = await supabase.storage.from(AUDIO_BUCKET).createSignedUrl(path, 60 * 60 * 6)
   if (error) throw error
-  return data.signedUrl
+  // A mano: la opción `download` de supabase-js codifica dos veces el nombre ("Oc%C3%A9anos").
+  return downloadAs ? `${data.signedUrl}&download=${encodeURIComponent(downloadAs)}` : data.signedUrl
 }
 
 // ---------- Listas ----------

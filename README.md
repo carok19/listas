@@ -14,8 +14,12 @@ listas/
 
 - **Supabase**: login (enlace por correo o Google), base de datos Postgres con RLS (cada miembro solo ve los datos de sus grupos) y Storage privado para los MP3 (`audio/{group_id}/{song_id}.mp3`).
 - **Roles**: `admin` (director, edita todo) y `member` (solo ve y escucha). Quien crea el grupo es admin. Un usuario puede estar en varios grupos.
-- **Invitaciones**: código de 6 caracteres, QR y link `/unirse/CODIGO` para compartir por WhatsApp.
-- **Agregar canciones**: buscar por nombre (`ytsearch5:`), pegar un link (YouTube u otro sitio compatible con yt-dlp) o subir un MP3. La letra se busca sola en [LRCLIB](https://lrclib.net) y siempre se puede editar.
+- **Invitaciones**: código de 6 caracteres, QR y link `/unirse/CODIGO` para compartir por WhatsApp (ver [Compartir la app](#compartir-la-app)).
+- **Agregar canciones**: buscar por nombre (`ytsearch5:`), pegar un link (YouTube u otro sitio compatible con yt-dlp) o subir MP3: se pueden elegir **varios a la vez**; el título y artista salen del nombre del archivo y se pueden corregir antes de subir.
+- **Letras**: se buscan solas (primero [LRCLIB](https://lrclib.net), luego [letras.com](https://www.letras.com)) y solo se aceptan si el título coincide. En **Buscar letra** se ven los resultados de las dos fuentes con vista previa. Si no aparece, los botones **Google** / **letras.com** abren el navegador; ahí se copia la letra (o el link de la página) y **Pegar lo copiado** la trae. Siempre se puede editar.
+  - letras.com no tiene API: se usa el autocompletado del sitio y se lee la letra de la página. En la APK la petición sale del celular; en la web pasa por el servicio de descarga (`/page`). Si el sitio cambia, sigue funcionando el camino de copiar y pegar.
+- **Escuchar con la letra**: en cada canción el reproductor queda fijo abajo mientras se lee la letra (como en letras.com, sin karaoke). El tamaño de la letra se ajusta con A−/A+ y la pantalla no se apaga mientras suena.
+- **Descargar MP3**: todos los miembros pueden bajar el MP3 de una canción o todos los de una lista (numerados en orden). En la APK quedan en **Documentos › Alabanza** (se ven en *Archivos* y en las apps de música); en el navegador, en *Descargas*.
 - **Listas**: por fecha, se reordenan arrastrando y se puede cambiar el tono de una canción solo para ese servicio. El inicio del grupo muestra la próxima lista.
 - **Ensayo/presentación**: letra grande, modo claro/oscuro, tamaño de letra ajustable, pantalla siempre encendida (Wake Lock), reproductor con anterior/siguiente y botón **Sin internet** que guarda los MP3 y las letras en el celular.
 
@@ -30,6 +34,7 @@ La app solo conoce su URL y este contrato. Si deja de funcionar, se puede reempl
 | POST | `/download` | `{url, song_id, fill_metadata?}` → trabajo `{id, song_id, status, progress, error}` |
 | GET | `/jobs/{id}` | Estado: `queued` → `downloading` → `uploading` → `done` / `error` |
 | GET | `/lyrics` | Respaldo para LRCLIB si el navegador no puede consultarlo directo |
+| GET | `/page?url=` | Lee una página de un sitio de letras permitido (`LYRICS_HOSTS`: letras.com, Genius…) para la versión web |
 
 - **Seguridad**: cada petición lleva el token de sesión de Supabase del usuario (`Authorization: Bearer …`). El servicio lo valida con Supabase y para `/download` exige que el usuario sea **admin** del grupo de la canción. La `service_role` key vive solo en el servidor. `API_TOKEN` es una capa extra opcional (header `X-Api-Token`). Ojo: no es secreta, porque el frontend la expone.
 - **Cola**: en memoria, con `MAX_CONCURRENT_JOBS` trabajos a la vez. El servicio marca la canción como `processing`, `ready` o `error` directamente en la base de datos, así que la app ve el resultado aunque se cierre.
@@ -51,9 +56,21 @@ GitHub Actions compila la APK sola cada vez que cambia algo en `web/` (workflow 
 1. *URL Configuration → Redirect URLs*: agrega `com.alabanza.app://**`. Sirve para entrar con Google o con enlace por correo desde la APK.
 2. *Sign In / Providers → Email*: desactiva **Confirm email** para que la gente cree su cuenta con correo y contraseña al instante, sin depender del correo (Supabase gratis manda muy pocos por hora).
 
-**Qué funciona sin servidor de descarga:** todo, excepto *Buscar* y *Link* en "Agregar canción". Las canciones se agregan subiendo el MP3. La letra automática de LRCLIB sí funciona. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
+**Qué funciona sin servidor de descarga:** todo, excepto *Buscar* y *Link* en "Agregar canción". Las canciones se agregan subiendo el MP3. Las letras (LRCLIB y letras.com) sí funcionan, porque la APK las pide directo desde el celular.
+
+**Guardar MP3:** van a *Documentos › Alabanza*. En Android 11 o más nuevo no pide permisos; en Android 10 o anterior la primera vez pide permiso de almacenamiento. Si algo falla, el botón *Descargar con el navegador* lo baja a *Descargas*. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
 
 > La llave de firma está en el repo para que todo funcione sin configurar secretos. Si el repo es público, cualquiera podría firmar una APK que se haga pasar por esta. Para un uso más serio, crea una llave propia y ponla en los secretos `ANDROID_KEYSTORE_*`. El workflow ya lee esas variables de entorno si existen.
+
+## Compartir la app
+
+1. El administrador entra al grupo → **Inicio › Invita a tu equipo** (o pestaña **Grupo › Invitar**) → **WhatsApp**. El mensaje lleva el link de la APK y el código del grupo.
+2. Cada persona abre el link en su celular Android, instala la APK, crea su cuenta y toca **Unirme con código**.
+3. En persona: **QR › 1. Descargar la app** para que la instalen y **2. Ya tengo la app** para que se unan.
+
+Los miembros ven canciones y listas, ensayan con la letra, guardan listas para usar sin internet y descargan los MP3. Solo los administradores agregan o editan.
+
+**iPhone:** la APK es solo para Android. Para iPhone hay que publicar la versión web (paso 3, Vercel) y poner su URL en la variable `WEB_URL` de GitHub Actions; así los links de invitación abren la web, que en iPhone se instala con *Compartir › Agregar a pantalla de inicio*.
 
 ## Despliegue
 
@@ -88,6 +105,7 @@ GitHub Actions compila la APK sola cada vez que cambia algo en `web/` (workflow 
 | `MAX_DURATION_SEC` | no | `1200` (20 min) |
 | `MAX_CONCURRENT_JOBS` | no | `2` |
 | `MP3_QUALITY` | no | `128` (kbps; 128 ≈ 1 MB por minuto) |
+| `LYRICS_HOSTS` | no | sitios que `/page` puede leer, separados por coma (por defecto letras.com, letras.mus.br, Genius y lyrics.com) |
 
 3. Cuando termine el deploy, abre `https://TU-SERVICIO.onrender.com/health` y verifica que responda `{"ok": true, ...}`.
 
