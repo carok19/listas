@@ -29,10 +29,19 @@ const YouTube = registerPlugin<YouTubePlugin>('YouTube')
 export const youtubeOnDevice = isNative && Capacitor.isPluginAvailable('YouTube')
 export const youtubeAvailable = youtubeOnDevice || downloaderConfigured
 
+/** La persona tocó "Cancelar": no es una falla y no se muestra como error. */
+export class DownloadCanceled extends Error {
+  constructor() {
+    super('Descarga cancelada.')
+  }
+}
+
+export const isCanceled = (e: unknown) => e instanceof DownloadCanceled
+
 /** Mensaje claro a partir del error de yt-dlp (en inglés y largo). */
 export function youtubeErrorMessage(raw: string) {
-  // Los mensajes propios de la app ya vienen en español.
-  if (/[áéíóúñ¿]/i.test(raw) && raw.length < 250) return raw
+  // Los mensajes propios de la app ya vienen en español (los de yt-dlp traen "ERROR:"/"WARNING:").
+  if (/[áéíóúñ¿]/i.test(raw) && !/error|warning/i.test(raw) && raw.length < 250) return raw
   const low = raw.toLowerCase()
   if (low.includes('sign in to confirm') || low.includes('not a bot') || low.includes('429') || low.includes('too many requests')) {
     return 'YouTube pidió verificar que no eres un robot. Prueba de nuevo en unos minutos o cambia de Wi-Fi a datos (o al revés).'
@@ -51,6 +60,11 @@ export function youtubeErrorMessage(raw: string) {
   return 'No se pudo descargar ese video. Prueba con otro resultado o sube el audio.'
 }
 
+function deviceError(e: unknown) {
+  const err = e as { code?: string; message?: string } | null
+  return err?.code === 'CANCELED' ? new DownloadCanceled() : new Error(youtubeErrorMessage(err?.message ?? ''))
+}
+
 interface SearchEntry {
   id?: string
   title?: string
@@ -67,7 +81,7 @@ export async function searchYouTube(query: string): Promise<SearchResult[]> {
   try {
     json = (await YouTube.search({ query, limit: 8 })).json
   } catch (e) {
-    throw new Error(youtubeErrorMessage((e as Error).message ?? ''))
+    throw deviceError(e)
   }
   const data = JSON.parse(json || '{}') as { entries?: SearchEntry[] }
   return (data.entries ?? [])
@@ -99,7 +113,7 @@ export async function downloadOnDevice(url: string, id: string, onProgress?: (pe
     try {
       result = await YouTube.download({ url, id })
     } catch (e) {
-      throw new Error(youtubeErrorMessage((e as Error).message ?? ''))
+      throw deviceError(e)
     }
     const { path, ...info } = result
     const res = await fetch(Capacitor.convertFileSrc(path))

@@ -62,7 +62,7 @@ GitHub Actions compila la APK sola cada vez que cambia algo en `web/` (workflow 
 1. *URL Configuration → Redirect URLs*: agrega `com.alabanza.app://**`. Sirve para entrar con Google o con enlace por correo desde la APK.
 2. *Sign In / Providers → Email*: desactiva **Confirm email** para que la gente cree su cuenta con correo y contraseña al instante, sin depender del correo (Supabase gratis manda muy pocos por hora).
 
-**Qué funciona sin servidor de descarga:** todo. La APK busca y descarga de YouTube desde el celular, y las letras (LRCLIB y letras.com) también las pide directo. Por llevar Python y yt-dlp, la APK pesa unos 30 MB y solo incluye celulares ARM (`arm64-v8a`, `armeabi-v7a`: prácticamente todos los Android).
+**Qué funciona sin servidor de descarga:** todo. La APK busca y descarga de YouTube desde el celular, y las letras (LRCLIB y letras.com) también las pide directo. Por llevar Python y yt-dlp, la APK pesa unos 35 MB y solo incluye celulares ARM (`arm64-v8a`, `armeabi-v7a`: prácticamente todos los Android).
 
 **Descargar audios:** van a *Documentos › Alabanza*. En Android 11 o más nuevo no pide permisos; en Android 10 o anterior la primera vez pide permiso de almacenamiento. Si algo falla, el botón *Descargar con el navegador* lo baja a *Descargas*. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
 

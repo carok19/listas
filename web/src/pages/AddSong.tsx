@@ -5,7 +5,7 @@ import { createSong, deleteSong, listSongs, updateSong, uploadSongAudio } from '
 import { errorMessage } from '../lib/supabase'
 import { wakeDownloader, type SearchResult } from '../lib/downloader'
 import { addSongFromVideo, type Progress, type VideoMeta } from '../lib/addFromVideo'
-import { searchYouTube, youtubeAvailable, youtubeOnDevice } from '../lib/youtube'
+import { isCanceled, searchYouTube, youtubeAvailable, youtubeOnDevice } from '../lib/youtube'
 import { findLyricsAuto } from '../lib/lyrics'
 import { AUDIO_ACCEPT, MAX_AUDIO_BYTES, audioExtension } from '../lib/audioFormat'
 import { formatDuration, guessFromFileName, guessTitleArtist, normalizeTitle } from '../lib/format'
@@ -46,7 +46,7 @@ export default function AddSong() {
     try {
       done(await addSongFromVideo(groupId, url, meta, setProgress))
     } catch (e) {
-      setError(errorMessage(e))
+      if (!isCanceled(e)) setError(errorMessage(e))
     } finally {
       setBusy(false)
       setProgress(null)
@@ -227,7 +227,13 @@ function SearchTab({ busy, onPick }: { busy: boolean; onPick: (r: SearchResult) 
                 className={`flex w-full items-center gap-3 rounded-xl p-2 text-left active:bg-slate-800 disabled:opacity-50 ${picked === r.id && busy ? 'bg-indigo-500/15 ring-1 ring-indigo-500' : 'bg-slate-900'}`}
               >
                 {r.thumbnail ? (
-                  <img src={r.thumbnail} alt="" className="h-16 w-28 shrink-0 rounded-lg object-cover" loading="lazy" />
+                  <img
+                    src={r.thumbnail}
+                    alt=""
+                    className="h-16 w-28 shrink-0 rounded-lg bg-slate-800 object-cover"
+                    loading="lazy"
+                    onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                  />
                 ) : (
                   <div className="h-16 w-28 shrink-0 rounded-lg bg-slate-800" />
                 )}

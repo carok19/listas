@@ -5,7 +5,7 @@ import { getJob, startDownload, type Job } from './downloader'
 import { guessTitleArtist } from './format'
 import { findLyricsAuto } from './lyrics'
 import type { Song } from './types'
-import { cancelDeviceDownload, downloadOnDevice, youtubeOnDevice, type DeviceDownload } from './youtube'
+import { cancelDeviceDownload, DownloadCanceled, downloadOnDevice, youtubeOnDevice, type DeviceDownload } from './youtube'
 
 export interface VideoMeta {
   title: string
@@ -41,9 +41,19 @@ function namesFromInfo(info: DeviceDownload['info']) {
 
 async function downloadToPhone(url: string, onProgress: OnProgress) {
   const id = newId()
-  const cancel = () => void cancelDeviceDownload(id)
+  let canceled = false
+  const cancel = () => {
+    canceled = true
+    onProgress({ label: 'Cancelando…' })
+    void cancelDeviceDownload(id)
+  }
   onProgress({ label: 'Preparando la descarga…', cancel })
-  return downloadOnDevice(url, id, (percent) => onProgress({ label: 'Descargando…', percent, cancel }))
+  const result = await downloadOnDevice(url, id, (percent) => {
+    if (!canceled) onProgress({ label: 'Descargando…', percent, cancel })
+  })
+  // Si se canceló justo al terminar, no se guarda nada.
+  if (canceled) throw new DownloadCanceled()
+  return result
 }
 
 async function withLyrics(song: Song, onProgress: OnProgress) {

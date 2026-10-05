@@ -19,6 +19,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -34,6 +37,8 @@ public class YouTubePlugin extends Plugin {
     private static final long UPDATE_EVERY_MS = 24L * 60 * 60 * 1000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    // Cancelaciones que llegan antes de que yt-dlp arranque (por ejemplo, mientras se prepara Python).
+    private final Set<String> canceledIds = Collections.synchronizedSet(new HashSet<>());
     private boolean ready = false;
 
     /** Prepara Python/yt-dlp y, una vez al día, baja la última versión de yt-dlp. */
@@ -123,6 +128,10 @@ public class YouTubePlugin extends Plugin {
             File dir = workDir(id);
             try {
                 prepare();
+                if (canceledIds.remove(id)) {
+                    call.reject("Descarga cancelada.", "CANCELED");
+                    return;
+                }
                 deleteRecursively(dir);
                 if (!dir.mkdirs() && !dir.isDirectory()) throw new Exception("No se pudo preparar la carpeta temporal.");
                 YoutubeDLRequest request = new YoutubeDLRequest(url);
@@ -169,14 +178,17 @@ public class YouTubePlugin extends Plugin {
                     double duration = json.optDouble("duration", 0);
                     if (duration > 0) result.put("duration", duration);
                 }
+                canceledIds.remove(id);
                 call.resolve(result);
             } catch (YoutubeDL.CanceledException e) {
+                canceledIds.remove(id);
                 deleteRecursively(dir);
                 call.reject("Descarga cancelada.", "CANCELED");
             } catch (Exception e) {
                 Log.w(TAG, "Descarga fallida", e);
                 deleteRecursively(dir);
-                call.reject(message(e));
+                if (canceledIds.remove(id)) call.reject("Descarga cancelada.", "CANCELED");
+                else call.reject(message(e));
             }
         });
     }
@@ -184,7 +196,10 @@ public class YouTubePlugin extends Plugin {
     @PluginMethod
     public void cancel(PluginCall call) {
         String id = call.getString("id");
-        if (id != null) YoutubeDL.getInstance().destroyProcessById(id);
+        if (id != null) {
+            canceledIds.add(id);
+            YoutubeDL.getInstance().destroyProcessById(id);
+        }
         call.resolve();
     }
 

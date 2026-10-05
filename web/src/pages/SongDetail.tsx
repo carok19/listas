@@ -5,7 +5,7 @@ import { deleteSong, getSong, updateSong, uploadSongAudio } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import { getJob, startDownload, type Job } from '../lib/downloader'
 import { retryOnDevice, type Progress } from '../lib/addFromVideo'
-import { youtubeOnDevice } from '../lib/youtube'
+import { isCanceled, youtubeOnDevice } from '../lib/youtube'
 import { AUDIO_ACCEPT } from '../lib/audioFormat'
 import { findLyricsAuto, SOURCE_LABEL } from '../lib/lyrics'
 import { hasAudio } from '../lib/files'
@@ -218,7 +218,7 @@ export default function SongDetail() {
                     <Button variant="ghost" className="min-h-9 py-1" onClick={retryProgress.cancel}>Cancelar</Button>
                   )}
                 </div>
-              ) : retry.error && youtubeOnDevice ? (
+              ) : retry.error && youtubeOnDevice && !isCanceled(retry.error) ? (
                 <ErrorBox>{errorMessage(retry.error)}</ErrorBox>
               ) : audioError ? (
                 <ErrorBox>{audioError}</ErrorBox>
