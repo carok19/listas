@@ -17,7 +17,7 @@ export default function AddSong() {
   const { groupId, isAdmin } = useGroup()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>(downloaderConfigured ? 'buscar' : 'mp3')
+  const [tab, setTab] = useState<Tab>('mp3')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -67,9 +67,9 @@ export default function AddSong() {
   }
 
   const tabs: { id: Tab; label: string; disabled?: boolean }[] = [
-    { id: 'buscar', label: 'Buscar', disabled: !downloaderConfigured },
-    { id: 'link', label: 'Link', disabled: !downloaderConfigured },
     { id: 'mp3', label: 'Subir MP3' },
+    { id: 'buscar', label: 'YouTube', disabled: !downloaderConfigured },
+    { id: 'link', label: 'Link', disabled: !downloaderConfigured },
     { id: 'manual', label: 'Solo letra' },
   ]
 

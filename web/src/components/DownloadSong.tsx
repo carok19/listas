@@ -8,7 +8,7 @@ import { Button, ErrorBox } from './ui'
 export function DownloadSong({ song }: { song: Song }) {
   const dl = useMutation({ mutationFn: () => downloadSong(song) })
   return (
-    <div className="mt-3">
+    <div>
       <Button variant="secondary" className="w-full" loading={dl.isPending} onClick={() => dl.mutate()}>
         ⬇ Descargar MP3
       </Button>

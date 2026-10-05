@@ -40,7 +40,7 @@ export default function Songs() {
             <ErrorBox>{errorMessage(songs.error)}</ErrorBox>
           ) : songs.data?.length === 0 ? (
             <Empty title="La biblioteca está vacía">
-              {isAdmin ? 'Agrega canciones pegando un link de YouTube, buscándolas o subiendo un MP3.' : 'El director aún no agregó canciones.'}
+              {isAdmin ? 'Toca "+ Agregar" y sube tus MP3 (puedes elegir varios a la vez). La letra se busca sola.' : 'El director aún no agregó canciones.'}
             </Empty>
           ) : (
             <ul className="divide-y divide-slate-800">

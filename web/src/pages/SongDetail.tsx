@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteSong, getSong, signedAudioUrl, updateSong, uploadSongAudio } from '../lib/api'
+import { deleteSong, getSong, updateSong, uploadSongAudio } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import { getJob, startDownload, type Job } from '../lib/downloader'
 import { findLyricsAuto, SOURCE_LABEL } from '../lib/lyrics'
@@ -9,10 +9,23 @@ import { hasAudio } from '../lib/files'
 import { formatDuration } from '../lib/format'
 import type { Song } from '../lib/types'
 import { useGroup } from '../hooks/useGroup'
+import { useWakeLock } from '../hooks/useWakeLock'
 import { Header, Page } from '../components/Layout'
+import { AudioPlayer } from '../components/AudioPlayer'
 import { DownloadSong } from '../components/DownloadSong'
 import { LyricsSearch } from '../components/LyricsSearch'
 import { Badge, Button, Card, ErrorBox, Input, PageSpinner, Spinner, Textarea } from '../components/ui'
+
+const TEXT_SIZE_KEY = 'alabanza:letra'
+
+function loadTextSize() {
+  try {
+    const n = Number(localStorage.getItem(TEXT_SIZE_KEY))
+    return n >= 14 && n <= 40 ? n : 18
+  } catch {
+    return 18
+  }
+}
 
 const JOB_LABEL: Record<Job['status'], string> = {
   queued: 'En cola…',
@@ -63,6 +76,19 @@ export default function SongDetail() {
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [autoLyrics, setAutoLyrics] = useState<string | null>(null)
   const triedLyrics = useRef(false)
+  const [textSize, setTextSizeState] = useState(loadTextSize)
+  const setTextSize = (n: number) => {
+    const size = Math.min(40, Math.max(14, n))
+    setTextSizeState(size)
+    try {
+      localStorage.setItem(TEXT_SIZE_KEY, String(size))
+    } catch {
+      /* sin almacenamiento */
+    }
+  }
+  // Pantalla encendida mientras suena, para leer la letra sin tocar el celular.
+  const [playing, setPlaying] = useState(false)
+  useWakeLock(playing)
 
   // Letra automática (LRCLIB y luego letras.com) cuando la canción no tiene letra.
   useEffect(() => {
@@ -161,7 +187,7 @@ export default function SongDetail() {
               </div>
             </div>
 
-            {/* Audio */}
+            {/* Audio (se escucha con el reproductor de abajo) */}
             <Card className="mt-4">
               {s.audio_status === 'processing' && !jobErr ? (
                 <div className="flex items-center gap-3 text-sm text-indigo-200">
@@ -172,10 +198,7 @@ export default function SongDetail() {
                   </span>
                 </div>
               ) : hasAudio(s) ? (
-                <>
-                  <AudioPreview path={s.audio_path!} version={s.updated_at} />
-                  <DownloadSong song={s} />
-                </>
+                <DownloadSong song={s} />
               ) : audioError ? (
                 <ErrorBox>{audioError}</ErrorBox>
               ) : (
@@ -218,17 +241,23 @@ export default function SongDetail() {
 
             {/* Letra */}
             <div className="mt-5">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Letra</h2>
+              <div className="mb-2 flex items-center gap-1">
+                <h2 className="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Letra</h2>
+                {s.lyrics?.trim() && (
+                  <>
+                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize - 2)} aria-label="Letra más pequeña">A−</button>
+                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize + 2)} aria-label="Letra más grande">A+</button>
+                  </>
+                )}
                 {isAdmin && (
-                  <button className="text-sm text-indigo-400" onClick={() => setLyricsOpen(true)}>
+                  <button className="ml-2 text-sm text-indigo-400" onClick={() => setLyricsOpen(true)}>
                     {s.lyrics?.trim() ? 'Buscar otra letra' : 'Buscar letra'}
                   </button>
                 )}
               </div>
               {autoLyrics && <p className="mb-2 text-xs text-amber-300">{autoLyrics}</p>}
               {s.lyrics?.trim() ? (
-                <p className="whitespace-pre-line text-lg leading-relaxed">{s.lyrics}</p>
+                <p className="whitespace-pre-line leading-relaxed" style={{ fontSize: textSize }}>{s.lyrics}</p>
               ) : (
                 <p className="text-sm text-slate-500">Sin letra todavía.</p>
               )}
@@ -239,9 +268,19 @@ export default function SongDetail() {
                 Origen: {s.source_url}
               </a>
             )}
+            {hasAudio(s) && <div className="h-20" />}
           </>
         )}
       </Page>
+
+      {/* Reproductor fijo sobre la barra de abajo: se escucha mientras se lee la letra. */}
+      {hasAudio(s) && !editing && (
+        <div className="fixed inset-x-0 bottom-[calc(55px+env(safe-area-inset-bottom))] z-20 border-t border-slate-800 bg-slate-950">
+          <div className="mx-auto max-w-2xl">
+            <AudioPlayer song={s} onPlayingChange={setPlaying} />
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <LyricsSearch
@@ -258,13 +297,6 @@ export default function SongDetail() {
       )}
     </>
   )
-}
-
-function AudioPreview({ path, version }: { path: string; version: string }) {
-  const url = useQuery({ queryKey: ['audio-url', path, version], queryFn: () => signedAudioUrl(path), staleTime: 60 * 60 * 1000 })
-  if (url.error) return <ErrorBox>{errorMessage(url.error)}</ErrorBox>
-  if (!url.data) return <Spinner small />
-  return <audio controls preload="metadata" src={url.data} className="w-full" />
 }
 
 function SongForm({
