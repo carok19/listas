@@ -4,12 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteSong, getSong, signedAudioUrl, updateSong, uploadSongAudio } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import { getJob, startDownload, type Job } from '../lib/downloader'
-import { searchLyrics, type LyricsMatch } from '../lib/lrclib'
+import { findLyricsAuto, SOURCE_LABEL } from '../lib/lyrics'
+import { hasAudio } from '../lib/files'
 import { formatDuration } from '../lib/format'
 import type { Song } from '../lib/types'
 import { useGroup } from '../hooks/useGroup'
 import { Header, Page } from '../components/Layout'
-import { Badge, Button, Card, ErrorBox, Input, Modal, PageSpinner, Spinner, Textarea } from '../components/ui'
+import { DownloadSong } from '../components/DownloadSong'
+import { LyricsSearch } from '../components/LyricsSearch'
+import { Badge, Button, Card, ErrorBox, Input, PageSpinner, Spinner, Textarea } from '../components/ui'
 
 const JOB_LABEL: Record<Job['status'], string> = {
   queued: 'En cola…',
@@ -61,19 +64,19 @@ export default function SongDetail() {
   const [autoLyrics, setAutoLyrics] = useState<string | null>(null)
   const triedLyrics = useRef(false)
 
-  // Letra automática desde LRCLIB cuando la canción no tiene letra.
+  // Letra automática (LRCLIB y luego letras.com) cuando la canción no tiene letra.
   useEffect(() => {
     const s = song.data
     if (!s || !isAdmin || triedLyrics.current || s.lyrics?.trim() || s.audio_status === 'processing') return
     triedLyrics.current = true
-    searchLyrics(s.title, s.artist)
-      .then(async (matches) => {
-        if (!matches[0]) {
-          setAutoLyrics('No encontramos la letra automáticamente. Puedes pegarla con "Editar".')
+    findLyricsAuto(s.title, s.artist)
+      .then(async (found) => {
+        if (!found) {
+          setAutoLyrics('No encontramos la letra automáticamente. Toca "Buscar letra" para buscarla en letras.com o Google.')
           return
         }
-        refresh(await updateSong(s.id, { lyrics: matches[0].lyrics }))
-        setAutoLyrics(`Letra encontrada en LRCLIB (${matches[0].artist} – ${matches[0].title}). Revisa que sea la correcta.`)
+        refresh(await updateSong(s.id, { lyrics: found.lyrics }))
+        setAutoLyrics(`Letra encontrada en ${SOURCE_LABEL[found.source]} (${found.artist} – ${found.title}). Revisa que sea la correcta.`)
       })
       .catch(() => setAutoLyrics(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,8 +171,11 @@ export default function SongDetail() {
                     {job.data?.progress != null && job.data.status === 'downloading' && ` ${Math.round(job.data.progress)}%`}
                   </span>
                 </div>
-              ) : s.audio_status === 'ready' && s.audio_path ? (
-                <AudioPreview path={s.audio_path} version={s.updated_at} />
+              ) : hasAudio(s) ? (
+                <>
+                  <AudioPreview path={s.audio_path!} version={s.updated_at} />
+                  <DownloadSong song={s} />
+                </>
               ) : audioError ? (
                 <ErrorBox>{audioError}</ErrorBox>
               ) : (
@@ -216,7 +222,7 @@ export default function SongDetail() {
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Letra</h2>
                 {isAdmin && (
                   <button className="text-sm text-indigo-400" onClick={() => setLyricsOpen(true)}>
-                    Buscar en LRCLIB
+                    {s.lyrics?.trim() ? 'Buscar otra letra' : 'Buscar letra'}
                   </button>
                 )}
               </div>
@@ -237,16 +243,19 @@ export default function SongDetail() {
         )}
       </Page>
 
-      <LyricsSearch
-        open={lyricsOpen}
-        onClose={() => setLyricsOpen(false)}
-        song={s}
-        onPick={async (m) => {
-          refresh(await updateSong(s.id, { lyrics: m.lyrics }))
-          setAutoLyrics(null)
-          setLyricsOpen(false)
-        }}
-      />
+      {isAdmin && (
+        <LyricsSearch
+          open={lyricsOpen}
+          onClose={() => setLyricsOpen(false)}
+          title={s.title}
+          artist={s.artist}
+          onPick={async (lyrics) => {
+            refresh(await updateSong(s.id, { lyrics }))
+            setAutoLyrics(null)
+            setLyricsOpen(false)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -323,63 +332,5 @@ function SongForm({
         Borrar canción
       </Button>
     </form>
-  )
-}
-
-function LyricsSearch({ open, onClose, song, onPick }: { open: boolean; onClose: () => void; song: Song; onPick: (m: LyricsMatch) => Promise<void> }) {
-  const [title, setTitle] = useState(song.title)
-  const [artist, setArtist] = useState(song.artist ?? '')
-  const [results, setResults] = useState<LyricsMatch[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [preview, setPreview] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (open) {
-      setTitle(song.title)
-      setArtist(song.artist ?? '')
-      setResults(null)
-      setPreview(null)
-    }
-  }, [open, song.title, song.artist])
-
-  return (
-    <Modal open={open} onClose={onClose} title="Buscar letra">
-      <form
-        className="space-y-2"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          setLoading(true)
-          setError(null)
-          try {
-            setResults(await searchLyrics(title, artist))
-          } catch (err) {
-            setError(errorMessage(err))
-          } finally {
-            setLoading(false)
-          }
-        }}
-      >
-        <Input placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <Input placeholder="Artista" value={artist} onChange={(e) => setArtist(e.target.value)} />
-        <Button type="submit" className="w-full" loading={loading}>Buscar</Button>
-      </form>
-      {error && <div className="mt-2"><ErrorBox>{error}</ErrorBox></div>}
-      {results && (
-        <div className="mt-3 space-y-2">
-          {results.length === 0 && <p className="text-sm text-slate-400">No se encontró. Puedes pegar la letra con "Editar".</p>}
-          {results.map((r, i) => (
-            <Card key={i} className="bg-slate-950">
-              <button className="w-full text-left" onClick={() => setPreview(preview === i ? null : i)}>
-                <p className="font-medium">{r.title}</p>
-                <p className="text-xs text-slate-400">{r.artist}</p>
-              </button>
-              {preview === i && <p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-line text-sm text-slate-300">{r.lyrics}</p>}
-              <Button className="mt-2 w-full" variant="secondary" onClick={() => onPick(r)}>Usar esta letra</Button>
-            </Card>
-          ))}
-        </div>
-      )}
-    </Modal>
   )
 }

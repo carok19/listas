@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { getNextSetlist } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import { formatServiceDate } from '../lib/format'
+import { shareInvite } from '../lib/invite'
+import { WEB_URL } from '../lib/platform'
 import { useGroup } from '../hooks/useGroup'
 import { GroupsLink, Header, Page } from '../components/Layout'
 import { Button, Card, Empty, ErrorBox, PageSpinner } from '../components/ui'
@@ -72,6 +74,24 @@ export default function GroupHome() {
             </Card>
           </Link>
         </div>
+
+        {isAdmin && group && (
+          <Card className="mt-6">
+            <p className="font-semibold">Invita a tu equipo</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Les llega {WEB_URL ? 'el link de la app' : 'el link para descargar la app (Android)'} y el código{' '}
+              <span className="font-mono font-bold text-indigo-300">{group.invite_code}</span>. Así ven las canciones y listas, y descargan los MP3.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button className="bg-emerald-600! active:bg-emerald-700!" onClick={() => shareInvite(group)}>
+                WhatsApp
+              </Button>
+              <Link to={`/g/${groupId}/ajustes`}>
+                <Button variant="secondary" className="w-full">QR y más</Button>
+              </Link>
+            </div>
+          </Card>
+        )}
       </Page>
     </>
   )

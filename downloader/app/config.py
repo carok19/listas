@@ -16,6 +16,16 @@ API_TOKEN = _env("API_TOKEN")
 # Orígenes permitidos para CORS, separados por coma. "*" = cualquiera.
 ALLOWED_ORIGINS = [o.strip() for o in _env("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
+# Sitios que /page puede leer para la versión web (el navegador no puede por CORS).
+LYRICS_HOSTS = {
+    h.strip().lower()
+    for h in _env(
+        "LYRICS_HOSTS",
+        "letras.com,www.letras.com,letras.mus.br,www.letras.mus.br,solr.sscdn.co,genius.com,www.lyrics.com",
+    ).split(",")
+    if h.strip()
+}
+
 MAX_DURATION_SEC = int(_env("MAX_DURATION_SEC", "1200"))  # 20 minutos
 MAX_CONCURRENT_JOBS = int(_env("MAX_CONCURRENT_JOBS", "2"))
 MP3_QUALITY = _env("MP3_QUALITY", "128")  # kbps

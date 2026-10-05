@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
   plugins: {
-    // Solo lo usamos explícitamente (LRCLIB); no reemplaza fetch global.
+    // Solo lo usamos explícitamente (LRCLIB y páginas de letras); no reemplaza fetch global.
     CapacitorHttp: { enabled: false },
   },
 }

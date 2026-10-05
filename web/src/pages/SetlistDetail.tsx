@@ -26,6 +26,8 @@ import {
 import { errorMessage } from '../lib/supabase'
 import { formatServiceDate } from '../lib/format'
 import { getSavedSetlist, offlineSupported, removeSavedSetlist, saveSetlistOffline } from '../lib/offline'
+import { downloadSetlistSongs, hasAudio } from '../lib/files'
+import { isNative } from '../lib/platform'
 import type { SetlistItem } from '../lib/types'
 import { useGroup } from '../hooks/useGroup'
 import { Header, Page } from '../components/Layout'
@@ -151,6 +153,25 @@ export default function SetlistDetail() {
     }
   }
 
+  // ---- MP3 al celular ----
+  const [mp3Progress, setMp3Progress] = useState<string | null>(null)
+  const [mp3Saved, setMp3Saved] = useState<string | null>(null)
+  async function downloadMp3s() {
+    if (!setlist.data) return
+    setError(null)
+    setMp3Saved(null)
+    try {
+      const where = await downloadSetlistSongs(setlist.data.title, setlist.data.service_date, items.map((i) => i.songs), (d, t) =>
+        setMp3Progress(`${d}/${t}`),
+      )
+      setMp3Saved(where)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setMp3Progress(null)
+    }
+  }
+
   if (setlist.isLoading) return <PageSpinner />
   if (setlist.error || !setlist.data) {
     return (
@@ -163,6 +184,7 @@ export default function SetlistDetail() {
     )
   }
   const s = setlist.data
+  const mp3Count = items.filter((i) => hasAudio(i.songs)).length
   const outdated = saved.data && JSON.stringify(saved.data.setlist.setlist_songs.map((i) => [i.id, i.songs.updated_at])) !== JSON.stringify(items.map((i) => [i.id, i.songs.updated_at]))
 
   return (
@@ -201,6 +223,18 @@ export default function SetlistDetail() {
               <button className="underline" onClick={toggleOffline}>Quitar descarga</button>
             )}
           </p>
+        )}
+        {mp3Count > 0 && (
+          <div className="mb-4">
+            <Button variant="secondary" className="w-full" onClick={downloadMp3s} loading={mp3Progress !== null}>
+              {mp3Progress !== null ? `Descargando MP3 ${mp3Progress}…` : `🎵 Descargar los MP3 (${mp3Count})`}
+            </Button>
+            {mp3Saved && (
+              <p className="mt-1 text-center text-xs text-emerald-400">
+                {isNative ? `✓ Guardados en ${mp3Saved}` : '✓ Listo. Revisa tu carpeta de Descargas.'}
+              </p>
+            )}
+          </div>
         )}
         {error && <div className="mb-3"><ErrorBox>{error}</ErrorBox></div>}
 
