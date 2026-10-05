@@ -59,7 +59,7 @@ function SortableRow({
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          className="flex h-10 w-8 shrink-0 touch-none items-center justify-center text-xl text-slate-500"
+          className="flex h-10 w-8 shrink-0 touch-none items-center justify-center text-xl text-slate-400"
           aria-label="Arrastrar para reordenar"
         >
           ≡
@@ -73,7 +73,7 @@ function SortableRow({
           <button onClick={onKey} className="h-10 rounded-lg px-2 text-xs text-slate-400 active:bg-slate-800" aria-label="Cambiar tono">
             {item.key_override ? `♯ ${item.key_override}` : 'Tono'}
           </button>
-          <button onClick={onRemove} className="h-10 w-9 rounded-lg text-lg text-slate-500 active:bg-slate-800" aria-label="Quitar">
+          <button onClick={onRemove} className="h-10 w-9 rounded-lg text-lg text-slate-400 active:bg-slate-800" aria-label="Quitar">
             ×
           </button>
         </>
@@ -136,20 +136,32 @@ export default function SetlistDetail() {
   // ---- Offline ----
   const saved = useQuery({ queryKey: ['saved', setlistId], queryFn: () => getSavedSetlist(setlistId) })
   const [progress, setProgress] = useState<string | null>(null)
-  async function toggleOffline() {
+  const refreshSaved = () => {
+    qc.invalidateQueries({ queryKey: ['saved', setlistId] })
+    qc.invalidateQueries({ queryKey: ['saved-setlists'] })
+  }
+  // Guarda o actualiza la copia (lo ya descargado no se vuelve a bajar).
+  async function saveOffline() {
+    if (!setlist.data) return
     setError(null)
     try {
-      if (saved.data) {
-        await removeSavedSetlist(setlistId)
-      } else if (setlist.data) {
-        await saveSetlistOffline({ ...setlist.data, setlist_songs: items }, group?.name ?? '', (d, t) => setProgress(`${d}/${t}`))
-      }
+      await saveSetlistOffline({ ...setlist.data, setlist_songs: items }, group?.name ?? '', (d, t) => setProgress(`${d}/${t}`))
     } catch (e) {
       setError(errorMessage(e))
     } finally {
       setProgress(null)
-      qc.invalidateQueries({ queryKey: ['saved', setlistId] })
-      qc.invalidateQueries({ queryKey: ['saved-setlists'] })
+      refreshSaved()
+    }
+  }
+  async function removeOffline() {
+    if (!confirm('¿Quitar esta lista del celular? Con internet la sigues viendo igual.')) return
+    setError(null)
+    try {
+      await removeSavedSetlist(setlistId)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      refreshSaved()
     }
   }
 
@@ -195,47 +207,58 @@ export default function SetlistDetail() {
         right={isAdmin && <Button variant="ghost" className="min-h-9 py-1" onClick={() => setEditOpen(true)}>Editar</Button>}
       />
       <Page>
-        <p className="text-sm capitalize text-indigo-300">{formatServiceDate(s.service_date)}</p>
+        <p className="text-sm text-indigo-300 first-letter:uppercase">{formatServiceDate(s.service_date)}</p>
         {s.notes && <p className="mt-1 whitespace-pre-line text-sm text-slate-400">{s.notes}</p>}
 
-        <div className="my-4 grid grid-cols-2 gap-2">
-          <Link to="presentar">
+        <div className="my-4">
+          <Link to="presentar" className="block">
             <Button className="w-full" disabled={!items.length}>▶ Ensayar / Presentar</Button>
           </Link>
-          {offlineSupported && (
-            <Button variant="secondary" onClick={toggleOffline} loading={progress !== null} disabled={!items.length}>
-              {progress !== null ? `Descargando ${progress}` : saved.data ? (outdated ? '↻ Actualizar descarga' : '✓ Sin internet') : '⬇ Sin internet'}
-            </Button>
+          {(offlineSupported || mp3Count > 0) && items.length > 0 && (
+            <>
+              <div className="mt-2 flex gap-2">
+                {offlineSupported && (
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={saved.data && !outdated ? removeOffline : saveOffline}
+                    loading={progress !== null}
+                    aria-label={saved.data && !outdated && progress === null ? 'Guardada sin internet. Toca para quitarla del celular' : undefined}
+                  >
+                    {progress !== null ? `Guardando ${progress}…` : saved.data ? (outdated ? '↻ Actualizar' : '✓ Sin internet') : '📥 Guardar sin internet'}
+                  </Button>
+                )}
+                {mp3Count > 0 && (
+                  <Button variant="secondary" className="flex-1" onClick={downloadMp3s} loading={mp3Progress !== null}>
+                    {mp3Progress !== null ? `Descargando ${mp3Progress}…` : `⬇ Descargar audios (${mp3Count})`}
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                {saved.data && !progress ? (
+                  outdated ? (
+                    <span className="text-amber-300">La lista cambió desde que la guardaste: toca ↻ Actualizar para tener la última versión sin internet.</span>
+                  ) : (
+                    <>
+                      Guardada en este celular: se puede ensayar sin internet. Se borra sola un mes después del servicio.{' '}
+                      <button className="min-h-6 text-slate-200 underline" onClick={removeOffline}>Quitar ahora</button>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <b className="font-semibold text-slate-300">Guardar sin internet</b> deja letras y audios dentro de la app para ensayar sin conexión.
+                    {mp3Count > 0 && <> <b className="font-semibold text-slate-300">Descargar audios</b> copia los archivos a tu celular.</>}
+                  </>
+                )}
+              </p>
+              {mp3Saved && (
+                <p className="mt-1 text-xs text-emerald-400">
+                  {isNative ? `✓ Audios guardados en ${mp3Saved}` : '✓ Listo. Revisa tu carpeta de Descargas.'}
+                </p>
+              )}
+            </>
           )}
         </div>
-        {saved.data && !progress && (
-          <p className="-mt-2 mb-3 text-xs text-slate-500">
-            {outdated ? (
-              <span className="text-amber-300">La lista cambió desde que la descargaste. </span>
-            ) : (
-              'Guardada en este celular. '
-            )}
-            {outdated ? (
-              <button className="underline" onClick={async () => { await removeSavedSetlist(setlistId); await toggleOffline() }}>
-                Actualizar
-              </button>
-            ) : (
-              <button className="underline" onClick={toggleOffline}>Quitar descarga</button>
-            )}
-          </p>
-        )}
-        {mp3Count > 0 && (
-          <div className="mb-4">
-            <Button variant="secondary" className="w-full" onClick={downloadMp3s} loading={mp3Progress !== null}>
-              {mp3Progress !== null ? `Descargando MP3 ${mp3Progress}…` : `🎵 Descargar los MP3 (${mp3Count})`}
-            </Button>
-            {mp3Saved && (
-              <p className="mt-1 text-center text-xs text-emerald-400">
-                {isNative ? `✓ Guardados en ${mp3Saved}` : '✓ Listo. Revisa tu carpeta de Descargas.'}
-              </p>
-            )}
-          </div>
-        )}
         {error && <div className="mb-3"><ErrorBox>{error}</ErrorBox></div>}
 
         {items.length === 0 ? (
@@ -341,7 +364,7 @@ function SongPicker({
 
   return (
     <Modal open={open} onClose={onClose} title="Agregar canciones">
-      <Input placeholder="Buscar en la biblioteca…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input type="search" aria-label="Buscar en la biblioteca" placeholder="Buscar en la biblioteca…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="mt-3 max-h-[50dvh] space-y-1 overflow-y-auto">
         {songs.isLoading && <PageSpinner />}
         {songs.data?.length === 0 && (

@@ -111,8 +111,8 @@ export default function Presentation() {
             </p>
             <p className="truncate font-bold">{song?.title ?? 'Lista vacía'}</p>
           </div>
-          <button className={iconBtn} onClick={() => setPrefs((p) => ({ ...p, size: Math.max(16, p.size - 3) }))} aria-label="Letra más pequeña">A−</button>
-          <button className={iconBtn} onClick={() => setPrefs((p) => ({ ...p, size: Math.min(72, p.size + 3) }))} aria-label="Letra más grande">A+</button>
+          <button className={iconBtn} onClick={() => setPrefs((p) => ({ ...p, size: Math.max(16, p.size - 3) }))} aria-label="Letra más pequeña, A−">A−</button>
+          <button className={iconBtn} onClick={() => setPrefs((p) => ({ ...p, size: Math.min(72, p.size + 3) }))} aria-label="Letra más grande, A+">A+</button>
           <button className={iconBtn} onClick={() => setPrefs((p) => ({ ...p, light: !p.light }))} aria-label="Cambiar tema">
             {light ? '☾' : '☀'}
           </button>

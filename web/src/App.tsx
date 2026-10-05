@@ -17,6 +17,7 @@ import AddSong from './pages/AddSong'
 import SongDetail from './pages/SongDetail'
 import GroupSettings from './pages/GroupSettings'
 import Presentation from './pages/Presentation'
+import Help from './pages/Help'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="canciones/nueva" element={<AddSong />} />
           <Route path="canciones/:songId" element={<SongDetail />} />
           <Route path="ajustes" element={<GroupSettings />} />
+          <Route path="ayuda" element={<Help />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

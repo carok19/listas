@@ -1,57 +1,55 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createSong, listSongs, updateSong, uploadSongAudio } from '../lib/api'
+import { createSong, deleteSong, listSongs, updateSong, uploadSongAudio } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
-import { downloaderConfigured, searchVideos, startDownload, wakeDownloader, type SearchResult } from '../lib/downloader'
+import { wakeDownloader, type SearchResult } from '../lib/downloader'
+import { addSongFromVideo, type Progress, type VideoMeta } from '../lib/addFromVideo'
+import { isCanceled, searchYouTube, youtubeAvailable, youtubeOnDevice } from '../lib/youtube'
 import { findLyricsAuto } from '../lib/lyrics'
+import { AUDIO_ACCEPT, MAX_AUDIO_BYTES, audioExtension } from '../lib/audioFormat'
 import { formatDuration, guessFromFileName, guessTitleArtist, normalizeTitle } from '../lib/format'
 import type { Song } from '../lib/types'
 import { useGroup } from '../hooks/useGroup'
 import { Header, Page } from '../components/Layout'
 import { Button, Card, Empty, ErrorBox, Input, PageSpinner, Spinner } from '../components/ui'
 
-type Tab = 'buscar' | 'link' | 'mp3' | 'manual'
+type Tab = 'youtube' | 'mp3' | 'link' | 'manual'
 
 export default function AddSong() {
   const { groupId, isAdmin } = useGroup()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>('mp3')
+  const [tab, setTab] = useState<Tab>(youtubeOnDevice ? 'youtube' : 'mp3')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<Progress | null>(null)
 
-  useEffect(() => wakeDownloader(), [])
+  // Si la persona salió de la pantalla mientras se descargaba, no la llevamos de vuelta.
+  const onScreen = useRef(true)
+  useEffect(() => {
+    onScreen.current = true
+    if (!youtubeOnDevice) wakeDownloader()
+    return () => {
+      onScreen.current = false
+    }
+  }, [])
 
-  const done = (song: Song, job?: string) => {
+  const done = (song: Song) => {
     qc.invalidateQueries({ queryKey: ['songs', groupId] })
-    navigate(`/g/${groupId}/canciones/${song.id}${job ? `?job=${job}` : ''}`, { replace: true })
+    if (onScreen.current) navigate(`/g/${groupId}/canciones/${song.id}`, { replace: true })
   }
 
-  /** Crea la canción y pide la descarga. Si el servicio falla, la canción queda creada con el error. */
-  async function createAndDownload(url: string, meta: { title: string; artist?: string; thumbnail?: string | null; duration?: number | null }, fill: boolean) {
+  async function addFromVideo(url: string, meta?: VideoMeta) {
     setBusy(true)
     setError(null)
-    let song: Song | null = null
     try {
-      song = await createSong(groupId, {
-        title: meta.title,
-        artist: meta.artist || null,
-        source_url: url,
-        thumbnail_url: meta.thumbnail ?? null,
-        duration_sec: meta.duration ? Math.round(meta.duration) : null,
-        audio_status: 'processing',
-      })
-      const job = await startDownload(url, song.id, fill)
-      done(song, job.id)
+      done(await addSongFromVideo(groupId, url, meta, setProgress))
     } catch (e) {
-      if (song) {
-        await updateSong(song.id, { audio_status: 'error', audio_error: errorMessage(e) }).catch(() => {})
-        done(song)
-      } else {
-        setError(errorMessage(e))
-        setBusy(false)
-      }
+      if (!isCanceled(e)) setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -67,9 +65,9 @@ export default function AddSong() {
   }
 
   const tabs: { id: Tab; label: string; disabled?: boolean }[] = [
+    { id: 'youtube', label: 'YouTube', disabled: !youtubeAvailable },
     { id: 'mp3', label: 'Subir MP3' },
-    { id: 'buscar', label: 'YouTube', disabled: !downloaderConfigured },
-    { id: 'link', label: 'Link', disabled: !downloaderConfigured },
+    { id: 'link', label: 'Link', disabled: !youtubeAvailable },
     { id: 'manual', label: 'Solo letra' },
   ]
 
@@ -77,56 +75,104 @@ export default function AddSong() {
     <>
       <Header title="Agregar canción" back={`/g/${groupId}/canciones`} />
       <Page>
-        <div className="mb-4 grid grid-cols-4 gap-1 rounded-xl bg-slate-900 p-1">
+        <div role="tablist" aria-label="Cómo agregar la canción" className="mb-4 grid grid-cols-4 gap-1 rounded-xl bg-slate-900 p-1">
           {tabs.map((t) => (
             <button
               key={t.id}
+              id={`tab-${t.id}`}
+              role="tab"
+              aria-selected={tab === t.id}
+              aria-controls="add-panel"
               disabled={t.disabled || busy}
               onClick={() => {
                 setTab(t.id)
                 setError(null)
               }}
-              className={`rounded-lg py-2 text-xs font-semibold disabled:opacity-30 ${tab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-300'}`}
+              className={`min-h-11 rounded-lg text-xs font-semibold disabled:opacity-30 ${tab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-300'}`}
             >
               {t.label}
             </button>
           ))}
         </div>
-        {!downloaderConfigured && (
-          <p className="mb-3 text-xs text-amber-300">El servicio de descarga no está configurado; por ahora solo puedes subir MP3.</p>
+        {!youtubeAvailable && (
+          <p className="mb-3 text-xs text-amber-300">La descarga desde YouTube no está disponible en esta versión; sube el audio.</p>
         )}
-        {error && <div className="mb-3"><ErrorBox>{error}</ErrorBox></div>}
 
-        {tab === 'buscar' && <SearchTab busy={busy} onPick={(r) => {
-          const g = guessTitleArtist(r.title, r.channel)
-          createAndDownload(r.url, { title: g.title || r.title, artist: g.artist, thumbnail: r.thumbnail, duration: r.duration }, false)
-        }} />}
-        {tab === 'link' && <LinkTab busy={busy} onSubmit={(url) => createAndDownload(url, { title: 'Descargando…' }, true)} />}
-        {tab === 'mp3' && (
-          <UploadTab
-            groupId={groupId}
-            onBusy={setBusy}
-            onFinished={(uploaded, total) => {
-              qc.invalidateQueries({ queryKey: ['songs', groupId] })
-              if (total === 1 && uploaded[0]) done(uploaded[0])
-            }}
-          />
+        {progress && (
+          <Card className="mb-4">
+            <div role="status" aria-live="polite" className="flex items-center gap-3">
+              <Spinner small />
+              <p className="flex-1 text-sm">
+                {progress.label}
+                {progress.percent != null && ` ${Math.round(progress.percent)}%`}
+              </p>
+              {progress.cancel && (
+                <Button variant="ghost" className="min-h-9 py-1" onClick={progress.cancel}>
+                  Cancelar
+                </Button>
+              )}
+            </div>
+            {progress.percent != null && (
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden>
+                <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.min(100, Math.max(2, progress.percent))}%` }} />
+              </div>
+            )}
+          </Card>
         )}
-        {tab === 'manual' && (
-          <ManualTab
-            busy={busy}
-            onSubmit={async (title, artist) => {
-              setBusy(true)
-              setError(null)
-              try {
-                done(await createSong(groupId, { title, artist: artist || null }))
-              } catch (e) {
-                setError(errorMessage(e))
-                setBusy(false)
+
+        {error && (
+          <div className="mb-3">
+            <ErrorBox
+              action={
+                tab !== 'mp3' && (
+                  <Button variant="secondary" onClick={() => { setTab('mp3'); setError(null) }}>
+                    Subir el audio en su lugar
+                  </Button>
+                )
               }
-            }}
-          />
+            >
+              {error}
+            </ErrorBox>
+          </div>
         )}
+
+        <div id="add-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          {tab === 'youtube' && (
+            <SearchTab
+              busy={busy}
+              onPick={(r) => {
+                const g = guessTitleArtist(r.title, r.channel)
+                addFromVideo(r.url, { title: g.title || r.title, artist: g.artist, thumbnail: r.thumbnail, duration: r.duration })
+              }}
+            />
+          )}
+          {tab === 'link' && <LinkTab busy={busy} onSubmit={(url) => addFromVideo(url)} />}
+          {tab === 'mp3' && (
+            <UploadTab
+              groupId={groupId}
+              onBusy={setBusy}
+              onFinished={(uploaded, total) => {
+                qc.invalidateQueries({ queryKey: ['songs', groupId] })
+                if (total === 1 && uploaded[0]) done(uploaded[0])
+              }}
+            />
+          )}
+          {tab === 'manual' && (
+            <ManualTab
+              busy={busy}
+              onSubmit={async (title, artist) => {
+                setBusy(true)
+                setError(null)
+                try {
+                  done(await createSong(groupId, { title, artist: artist || null }))
+                } catch (e) {
+                  setError(errorMessage(e))
+                  setBusy(false)
+                }
+              }}
+            />
+          )}
+        </div>
       </Page>
     </>
   )
@@ -145,7 +191,7 @@ function SearchTab({ busy, onPick }: { busy: boolean; onPick: (r: SearchResult) 
     setLoading(true)
     setError(null)
     try {
-      setResults(await searchVideos(q.trim()))
+      setResults(await searchYouTube(q.trim()))
     } catch (err) {
       setError(errorMessage(err))
       setResults(null)
@@ -157,40 +203,50 @@ function SearchTab({ busy, onPick }: { busy: boolean; onPick: (r: SearchResult) 
   return (
     <div>
       <form onSubmit={search} className="flex gap-2">
-        <Input placeholder="Nombre de la canción y artista" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        <Input aria-label="Buscar en YouTube" placeholder="Nombre de la canción y artista" value={q} onChange={(e) => setQ(e.target.value)} autoFocus enterKeyHint="search" />
         <Button type="submit" loading={loading} disabled={busy}>Buscar</Button>
       </form>
-      <p className="mt-2 text-xs text-slate-500">La primera búsqueda puede tardar ~1 minuto si el servidor estaba dormido.</p>
+      <p className="mt-2 text-xs text-slate-400">
+        {youtubeOnDevice
+          ? 'Toca un resultado: el audio se descarga en tu celular, se guarda en el grupo y se busca la letra. La primera vez tarda un poco más.'
+          : 'La primera búsqueda puede tardar ~1 minuto si el servidor estaba dormido.'}
+      </p>
       {error && <div className="mt-3"><ErrorBox>{error}</ErrorBox></div>}
       {loading && <PageSpinner />}
       {results && !loading && (
-        <div className="mt-3 space-y-2">
-          {results.length === 0 && <Empty title="Sin resultados">Prueba con otras palabras o pega el link directamente.</Empty>}
+        <ul className="mt-3 space-y-2">
+          {results.length === 0 && <Empty title="Sin resultados">Prueba con otras palabras o pega el link en la pestaña Link.</Empty>}
           {results.map((r) => (
-            <button
-              key={r.id}
-              disabled={busy}
-              onClick={() => {
-                setPicked(r.id)
-                onPick(r)
-              }}
-              className="flex w-full items-center gap-3 rounded-xl bg-slate-900 p-2 text-left active:bg-slate-800 disabled:opacity-50"
-            >
-              {r.thumbnail ? (
-                <img src={r.thumbnail} alt="" className="h-16 w-28 shrink-0 rounded-lg object-cover" loading="lazy" />
-              ) : (
-                <div className="h-16 w-28 shrink-0 rounded-lg bg-slate-800" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 text-sm font-medium">{r.title}</p>
-                <p className="truncate text-xs text-slate-400">
-                  {r.channel} {r.duration ? `· ${formatDuration(r.duration)}` : ''}
-                </p>
-                {picked === r.id && busy && <p className="text-xs text-indigo-300">Enviando a descargar…</p>}
-              </div>
-            </button>
+            <li key={r.id}>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setPicked(r.id)
+                  onPick(r)
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl p-2 text-left active:bg-slate-800 disabled:opacity-50 ${picked === r.id && busy ? 'bg-indigo-500/15 ring-1 ring-indigo-500' : 'bg-slate-900'}`}
+              >
+                {r.thumbnail ? (
+                  <img
+                    src={r.thumbnail}
+                    alt=""
+                    className="h-16 w-28 shrink-0 rounded-lg bg-slate-800 object-cover"
+                    loading="lazy"
+                    onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                  />
+                ) : (
+                  <div className="h-16 w-28 shrink-0 rounded-lg bg-slate-800" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-sm font-medium">{r.title}</p>
+                  <p className="truncate text-xs text-slate-400">
+                    {r.channel} {r.duration ? `· ${formatDuration(r.duration)}` : ''}
+                  </p>
+                </div>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   )
@@ -207,16 +263,16 @@ function LinkTab({ busy, onSubmit }: { busy: boolean; onSubmit: (url: string) =>
         if (valid) onSubmit(url.trim())
       }}
     >
-      <Input label="Link de YouTube u otro sitio" type="url" inputMode="url" placeholder="https://youtu.be/…" value={url} onChange={(e) => setUrl(e.target.value)} autoFocus />
-      <p className="text-xs text-slate-400">Se descarga solo el audio en MP3. El título y artista se completan solos; luego puedes editarlos.</p>
+      <Input label="Link del video o canción" type="url" inputMode="url" placeholder="https://youtu.be/…" value={url} onChange={(e) => setUrl(e.target.value)} autoFocus />
+      <p className="text-xs text-slate-400">
+        Se descarga solo el audio. Funciona con YouTube, SoundCloud, Facebook, Instagram y otros sitios de video. El título y el artista se completan solos y luego puedes editarlos.
+      </p>
       <Button type="submit" className="w-full" disabled={!valid} loading={busy}>
         Descargar audio
       </Button>
     </form>
   )
 }
-
-const MAX_MP3_BYTES = 50 * 1024 * 1024
 
 interface UploadItem {
   key: string
@@ -262,7 +318,8 @@ function UploadTab({
     ])
   }
 
-  const ready = (it: UploadItem) => it.status !== 'done' && it.title.trim() && it.file.size <= MAX_MP3_BYTES
+  const usable = (f: File) => f.size <= MAX_AUDIO_BYTES && audioExtension(f) !== null
+  const ready = (it: UploadItem) => it.status !== 'done' && it.title.trim() && usable(it.file)
   const toUpload = items.filter(ready)
   const doneCount = items.filter((it) => it.status === 'done').length
   const errorCount = items.filter((it) => it.status === 'error').length
@@ -275,9 +332,15 @@ function UploadTab({
     for (const it of toUpload) {
       update(it.key, { status: 'uploading', error: undefined })
       try {
-        const song = it.song ?? (await createSong(groupId, { title: it.title.trim(), artist: it.artist.trim() || null }))
-        update(it.key, { song })
-        let saved = await uploadSongAudio(song, it.file)
+        const song = await createSong(groupId, { title: it.title.trim(), artist: it.artist.trim() || null })
+        let saved: Song
+        try {
+          saved = await uploadSongAudio(song, it.file)
+        } catch (e) {
+          // Sin audio no sirve: no dejarla en la biblioteca.
+          await deleteSong(song).catch(() => {})
+          throw e
+        }
         if (autoLyrics) {
           update(it.key, { status: 'lyrics' })
           const found = await findLyricsAuto(saved.title, saved.artist).catch(() => null)
@@ -298,27 +361,28 @@ function UploadTab({
 
   return (
     <div className="space-y-3">
-      <Card className="border border-dashed border-slate-700 text-center">
+      <Card className="border border-dashed border-slate-700 text-center focus-within:ring-2 focus-within:ring-indigo-400">
         <label className={`block ${running ? 'opacity-50' : 'cursor-pointer'}`}>
           <input
             type="file"
             multiple
-            accept="audio/mpeg,audio/mp3,.mp3"
-            className="hidden"
+            accept={AUDIO_ACCEPT}
+            className="sr-only"
             disabled={running}
             onChange={(e) => {
               addFiles(e.target.files)
               e.target.value = ''
             }}
           />
-          <p className="text-3xl">🎵</p>
-          <p className="mt-1 text-sm font-medium">{items.length ? 'Agregar más MP3' : 'Toca para elegir uno o varios MP3'}</p>
-          <p className="text-xs text-slate-500">Puedes seleccionar varias canciones a la vez (máximo 50 MB cada una).</p>
+          <p className="text-3xl" aria-hidden>🎵</p>
+          <p className="mt-1 text-sm font-medium">{items.length ? 'Agregar más canciones' : 'Toca para elegir una o varias canciones'}</p>
+          <p className="text-xs text-slate-400">MP3 o M4A (también OGG y WAV), varias a la vez, hasta 50 MB cada una.</p>
         </label>
       </Card>
 
       {items.map((it) => {
-        const tooBig = it.file.size > MAX_MP3_BYTES
+        const tooBig = it.file.size > MAX_AUDIO_BYTES
+        const notAudio = audioExtension(it.file) === null
         const locked = running || it.status === 'done'
         return (
           <Card key={it.key} className="p-3">
@@ -339,8 +403,8 @@ function UploadTab({
               </span>
               {!locked && (
                 <button
-                  className="h-8 w-8 shrink-0 rounded-full text-lg text-slate-500 active:bg-slate-800"
-                  aria-label="Quitar de la lista"
+                  className="h-10 w-10 shrink-0 rounded-full text-lg text-slate-400 active:bg-slate-800"
+                  aria-label={`Quitar ${it.file.name} de la lista`}
                   onClick={() => setItems((cur) => cur.filter((x) => x.key !== it.key))}
                 >
                   ×
@@ -352,7 +416,7 @@ function UploadTab({
                 <span className="font-medium">{it.song?.title ?? it.title}</span>
                 {(it.song?.artist ?? it.artist) && <span className="text-slate-400"> · {it.song?.artist ?? it.artist}</span>}
                 {autoLyrics && it.lyricsFound !== undefined && (
-                  <span className={`ml-2 text-xs ${it.lyricsFound ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <span className={`ml-2 text-xs ${it.lyricsFound ? 'text-emerald-400' : 'text-slate-400'}`}>
                     {it.lyricsFound ? 'con letra' : 'sin letra'}
                   </span>
                 )}
@@ -361,14 +425,14 @@ function UploadTab({
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <Input
                   placeholder="Título"
-                  aria-label="Título"
+                  aria-label={`Título de ${it.file.name}`}
                   value={it.title}
                   disabled={locked}
                   onChange={(e) => update(it.key, { title: e.target.value })}
                 />
                 <Input
                   placeholder="Artista"
-                  aria-label="Artista"
+                  aria-label={`Artista de ${it.file.name}`}
                   value={it.artist}
                   disabled={locked}
                   onChange={(e) => update(it.key, { artist: e.target.value })}
@@ -377,7 +441,8 @@ function UploadTab({
             )}
             {it.status === 'uploading' && <p className="mt-1 text-xs text-indigo-300">Subiendo…</p>}
             {it.status === 'lyrics' && <p className="mt-1 text-xs text-indigo-300">Buscando la letra…</p>}
-            {tooBig && <p className="mt-1 text-xs text-red-300">Pesa más de 50 MB. Usa un MP3 más liviano.</p>}
+            {notAudio && <p className="mt-1 text-xs text-red-300">No es un archivo de audio (usa MP3 o M4A). Quítalo de la lista.</p>}
+            {!notAudio && tooBig && <p className="mt-1 text-xs text-red-300">Pesa más de 50 MB. Usa un audio más liviano.</p>}
             {it.status === 'pending' && existing.has(normalizeTitle(it.title)) && (
               <p className="mt-1 text-xs text-amber-300">Ya hay una canción con este título en la biblioteca.</p>
             )}

@@ -34,7 +34,7 @@ export async function saveSetlistOffline(
       const res = await fetch(url)
       if (!res.ok) throw new Error('No se pudo descargar un audio de la lista.')
       const blob = await res.blob()
-      await audio.put(audioKey(path), new Response(blob, { headers: { 'Content-Type': 'audio/mpeg' } }))
+      await audio.put(audioKey(path), new Response(blob, { headers: { 'Content-Type': blob.type || 'audio/mpeg' } }))
     }
     done++
     onProgress?.(done, paths.length)
@@ -42,6 +42,8 @@ export async function saveSetlistOffline(
   const data = await caches.open(DATA_CACHE)
   const payload: SavedSetlist = { setlist, groupName, savedAt: new Date().toISOString() }
   await data.put(setlistKey(setlist.id), new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } }))
+  // Al actualizar, los audios que se quitaron o reemplazaron ya no hacen falta.
+  await pruneAudio()
   await navigator.storage?.persist?.().catch(() => false)
 }
 
@@ -67,17 +69,32 @@ export async function listSavedSetlists(): Promise<SavedSetlist[]> {
 export async function removeSavedSetlist(id: string) {
   if (!offlineSupported) return
   const data = await caches.open(DATA_CACHE)
-  const saved = await getSavedSetlist(id)
   await data.delete(setlistKey(id))
-  if (!saved) return
-  // Borrar audios que ya no use ninguna otra lista guardada.
-  const others = await listSavedSetlists()
-  const inUse = new Set(others.flatMap((s) => s.setlist.setlist_songs.map((i) => i.songs.audio_path)))
+  await pruneAudio()
+}
+
+/** Borra los audios que ya no use ninguna lista guardada. */
+async function pruneAudio() {
+  const saved = await listSavedSetlists()
+  const inUse = new Set(saved.flatMap((s) => s.setlist.setlist_songs.map((i) => i.songs.audio_path)))
   const audio = await caches.open(AUDIO_CACHE)
-  for (const item of saved.setlist.setlist_songs) {
-    const p = item.songs.audio_path
-    if (p && !inUse.has(p)) await audio.delete(audioKey(p))
+  for (const req of await audio.keys()) {
+    const path = decodeURIComponent(new URL(req.url).pathname.replace('/__offline/audio/', ''))
+    if (!inUse.has(path)) await audio.delete(req)
   }
+}
+
+/** Quita las listas cuyo servicio pasó hace más de `days` días, para no llenar el celular. */
+export async function removeExpiredSetlists(days = 30) {
+  if (!offlineSupported) return
+  const limit = new Date()
+  limit.setDate(limit.getDate() - days)
+  const cutoff = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, '0')}-${String(limit.getDate()).padStart(2, '0')}`
+  const expired = (await listSavedSetlists()).filter((s) => s.setlist.service_date < cutoff)
+  if (!expired.length) return
+  const data = await caches.open(DATA_CACHE)
+  for (const s of expired) await data.delete(setlistKey(s.setlist.id))
+  await pruneAudio()
 }
 
 /** El MP3 guardado para usar sin internet, si está en este dispositivo. */

@@ -1,4 +1,5 @@
 import { supabase, AUDIO_BUCKET, audioPathFor } from './supabase'
+import { audioExtension, audioMime, MAX_AUDIO_BYTES } from './audioFormat'
 import type { Group, GroupWithRole, Member, Role, Setlist, SetlistWithItems, Song } from './types'
 
 function check<T>(res: { data: T; error: unknown }): T {
@@ -103,20 +104,27 @@ export async function deleteSong(song: Song) {
   check(await supabase.from('songs').delete().eq('id', song.id))
 }
 
-/** Sube un MP3 manualmente y marca la canción como lista. */
+/** Sube el audio (MP3, M4A, OGG…) y marca la canción como lista. */
 export async function uploadSongAudio(song: Song, file: File): Promise<Song> {
-  const path = audioPathFor(song.group_id, song.id)
-  const { error } = await supabase.storage
-    .from(AUDIO_BUCKET)
-    .upload(path, file, { upsert: true, contentType: 'audio/mpeg', cacheControl: '31536000' })
+  const ext = audioExtension(file)
+  if (!ext) throw new Error('Ese archivo no es de audio. Usa MP3 o M4A.')
+  if (file.size > MAX_AUDIO_BYTES) throw new Error('El audio pesa más de 50 MB. Usa uno más liviano.')
+  const path = audioPathFor(song.group_id, song.id, ext)
+  // El bucket solo acepta tipos de audio; Android a veces entrega el archivo sin tipo.
+  const contentType = audioMime(ext)
+  const body = file.type === contentType ? file : new File([file], file.name, { type: contentType })
+  const { error } = await supabase.storage.from(AUDIO_BUCKET).upload(path, body, { upsert: true, contentType, cacheControl: '31536000' })
   if (error) throw error
   const duration = await readDuration(file).catch(() => null)
-  return updateSong(song.id, {
+  const updated = await updateSong(song.id, {
     audio_path: path,
     audio_status: 'ready',
     audio_error: null,
     duration_sec: duration ?? song.duration_sec,
   })
+  // Al reemplazar con otro formato, el archivo anterior queda con otro nombre.
+  if (song.audio_path && song.audio_path !== path) await supabase.storage.from(AUDIO_BUCKET).remove([song.audio_path]).catch(() => {})
+  return updated
 }
 
 function readDuration(file: File): Promise<number | null> {

@@ -40,7 +40,7 @@ export default function JoinGroup() {
         <Card className="text-center">
           <p className="text-sm text-slate-400">Te invitaron a unirte a</p>
           <p className="mt-1 text-2xl font-bold">{preview.data.name}</p>
-          <p className="mt-1 text-xs text-slate-500">{preview.data.member_count} miembro(s)</p>
+          <p className="mt-1 text-xs text-slate-400">{preview.data.member_count} miembro(s)</p>
           {join.error && <div className="mt-3"><ErrorBox>{errorMessage(join.error)}</ErrorBox></div>}
           <Button className="mt-5 w-full" onClick={() => join.mutate()} loading={join.isPending}>
             Unirme al grupo

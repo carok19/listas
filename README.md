@@ -12,20 +12,26 @@ listas/
 
 ## Cómo funciona
 
-- **Supabase**: login (enlace por correo o Google), base de datos Postgres con RLS (cada miembro solo ve los datos de sus grupos) y Storage privado para los MP3 (`audio/{group_id}/{song_id}.mp3`).
+- **Supabase**: login (enlace por correo o Google), base de datos Postgres con RLS (cada miembro solo ve los datos de sus grupos) y Storage privado para los audios (`audio/{group_id}/{song_id}.mp3`, o `.m4a`, `.ogg`… según el archivo).
 - **Roles**: `admin` (director, edita todo) y `member` (solo ve y escucha). Quien crea el grupo es admin. Un usuario puede estar en varios grupos.
 - **Invitaciones**: código de 6 caracteres, QR y link `/unirse/CODIGO` para compartir por WhatsApp (ver [Compartir la app](#compartir-la-app)).
-- **Agregar canciones**: buscar por nombre (`ytsearch5:`), pegar un link (YouTube u otro sitio compatible con yt-dlp) o subir MP3: se pueden elegir **varios a la vez**; el título y artista salen del nombre del archivo y se pueden corregir antes de subir.
+- **Agregar canciones**: buscar en YouTube por nombre, pegar un link (YouTube u otro sitio compatible con yt-dlp) o subir audios (MP3, M4A, OGG, WAV): se pueden elegir **varios a la vez**; el título y artista salen del nombre del archivo y se pueden corregir antes de subir.
+  - **En la APK, YouTube se descarga en el celular** con [youtubedl-android](https://github.com/JunkFood02/youtubedl-android) (yt-dlp + Python dentro de la app, plugin nativo `YouTubePlugin.java`). YouTube bloquea las IP de servidores como Render, pero no la de un teléfono. Se baja el audio M4A original (sin convertir, no hace falta ffmpeg) y luego se sube al grupo. yt-dlp se actualiza solo una vez al día desde GitHub.
+  - En la web se usa el servicio de descarga (abajo).
+  - Si la descarga falla o se cancela **no queda ninguna canción a medias**: en el celular la canción se crea solo cuando el audio ya bajó; por el servidor se borra si el trabajo termina en error. Las canciones que ya estaban rotas muestran **Borrar canción**.
 - **Letras**: se buscan solas (primero [LRCLIB](https://lrclib.net), luego [letras.com](https://www.letras.com)) y solo se aceptan si el título coincide. En **Buscar letra** se ven los resultados de las dos fuentes con vista previa. Si no aparece, los botones **Google** / **letras.com** abren el navegador; ahí se copia la letra (o el link de la página) y **Pegar lo copiado** la trae. Siempre se puede editar.
   - letras.com no tiene API: se usa el autocompletado del sitio y se lee la letra de la página. En la APK la petición sale del celular; en la web pasa por el servicio de descarga (`/page`). Si el sitio cambia, sigue funcionando el camino de copiar y pegar.
 - **Escuchar con la letra**: en cada canción el reproductor queda fijo abajo mientras se lee la letra (como en letras.com, sin karaoke). El tamaño de la letra se ajusta con A−/A+ y la pantalla no se apaga mientras suena.
-- **Descargar MP3**: todos los miembros pueden bajar el MP3 de una canción o todos los de una lista (numerados en orden). En la APK quedan en **Documentos › Alabanza** (se ven en *Archivos* y en las apps de música); en el navegador, en *Descargas*.
+- **Descargar audio**: todos los miembros pueden bajar el audio de una canción o todos los de una lista (numerados en orden). En la APK quedan en **Documentos › Alabanza** (se ven en *Archivos* y en las apps de música); en el navegador, en *Descargas*.
 - **Listas**: por fecha, se reordenan arrastrando y se puede cambiar el tono de una canción solo para ese servicio. El inicio del grupo muestra la próxima lista.
-- **Ensayo/presentación**: letra grande, modo claro/oscuro, tamaño de letra ajustable, pantalla siempre encendida (Wake Lock), reproductor con anterior/siguiente y botón **Sin internet** que guarda los MP3 y las letras en el celular.
+- **Ensayo/presentación**: letra grande, modo claro/oscuro, tamaño de letra ajustable, pantalla siempre encendida (Wake Lock), reproductor con anterior/siguiente.
+- **Guardar sin internet** (en cada lista): guarda letras y audios dentro de la app (Cache Storage) para ensayar sin conexión. **↻ Actualizar** la vuelve a guardar si la lista cambió y **Quitar** la borra (también desde *Mis grupos › Disponibles sin internet*). Se borran solas un mes después del servicio, y los audios que ya no usa ninguna lista se eliminan.
+- **Ayuda** dentro de la app (*Inicio › ¿Cómo se usa la app?*) y **aviso de versión nueva** en la APK (compara con *Releases* una vez al día).
+- **Accesibilidad**: etiquetas para lectores de pantalla (TalkBack), contraste AA, foco visible, pestañas y diálogos con roles ARIA, áreas táctiles de 44 px. Revisado con axe-core.
 
 ### Servicio de descarga (desacoplado)
 
-La app solo conoce su URL y este contrato. Si deja de funcionar, se puede reemplazar por otro que lo respete, y mientras tanto la opción **"Sube el MP3 manualmente"** sigue funcionando.
+La app solo conoce su URL y este contrato. Si deja de funcionar, se puede reemplazar por otro que lo respete, y mientras tanto **Subir MP3** (o **Subir el audio** en cada canción) sigue funcionando.
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -56,9 +62,9 @@ GitHub Actions compila la APK sola cada vez que cambia algo en `web/` (workflow 
 1. *URL Configuration → Redirect URLs*: agrega `com.alabanza.app://**`. Sirve para entrar con Google o con enlace por correo desde la APK.
 2. *Sign In / Providers → Email*: desactiva **Confirm email** para que la gente cree su cuenta con correo y contraseña al instante, sin depender del correo (Supabase gratis manda muy pocos por hora).
 
-**Qué funciona sin servidor de descarga:** todo, excepto *Buscar* y *Link* en "Agregar canción". Las canciones se agregan subiendo el MP3. Las letras (LRCLIB y letras.com) sí funcionan, porque la APK las pide directo desde el celular.
+**Qué funciona sin servidor de descarga:** todo. La APK busca y descarga de YouTube desde el celular, y las letras (LRCLIB y letras.com) también las pide directo. Por llevar Python y yt-dlp, la APK pesa unos 35 MB y solo incluye celulares ARM (`arm64-v8a`, `armeabi-v7a`: prácticamente todos los Android).
 
-**Guardar MP3:** van a *Documentos › Alabanza*. En Android 11 o más nuevo no pide permisos; en Android 10 o anterior la primera vez pide permiso de almacenamiento. Si algo falla, el botón *Descargar con el navegador* lo baja a *Descargas*. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
+**Descargar audios:** van a *Documentos › Alabanza*. En Android 11 o más nuevo no pide permisos; en Android 10 o anterior la primera vez pide permiso de almacenamiento. Si algo falla, el botón *Descargar con el navegador* lo baja a *Descargas*. Si algún día hay un servicio de descarga (ver `downloader/`), pon su URL en *Settings → Secrets and variables → Actions → Variables* como `DOWNLOADER_URL` y la próxima APK lo usará.
 
 > La llave de firma está en el repo para que todo funcione sin configurar secretos. Si el repo es público, cualquiera podría firmar una APK que se haga pasar por esta. Para un uso más serio, crea una llave propia y ponla en los secretos `ANDROID_KEYSTORE_*`. El workflow ya lee esas variables de entorno si existen.
 
@@ -76,7 +82,7 @@ Los miembros ven canciones y listas, ensayan con la letra, guardan listas para u
 
 ### 1. Supabase
 
-> El proyecto **`alabanza`** (organización *carok*) ya está creado y con las migraciones aplicadas. Para otro proyecto, ejecuta `supabase/migrations/001_init.sql` y luego `002_private_helpers.sql` en **SQL Editor → Run**.
+> El proyecto **`alabanza`** (organización *carok*) ya está creado y con las migraciones aplicadas. Para otro proyecto, ejecuta en orden `supabase/migrations/001_init.sql`, `002_private_helpers.sql` y `003_audio_formats.sql` (tipos de audio aceptados por el bucket) en **SQL Editor → Run**.
 
 1. **Authentication → URL Configuration**
    - *Site URL*: la URL de Vercel (ej. `https://alabanza.vercel.app`).
