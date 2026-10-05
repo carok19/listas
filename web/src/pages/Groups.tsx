@@ -3,11 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createGroup, joinGroup, listMyGroups } from '../lib/api'
 import { errorMessage, supabase } from '../lib/supabase'
-import { listSavedSetlists } from '../lib/offline'
+import { listSavedSetlists, removeExpiredSetlists, removeSavedSetlist } from '../lib/offline'
 import { formatServiceDate } from '../lib/format'
 import { useAuth } from '../hooks/useAuth'
 import { useOnline } from '../hooks/useOnline'
-import { Header, Page } from '../components/Layout'
+import { Header, Page, UpdateNotice } from '../components/Layout'
 import { Badge, Button, Card, Empty, ErrorBox, Input, Modal, PageSpinner } from '../components/ui'
 
 export default function Groups() {
@@ -20,7 +20,20 @@ export default function Groups() {
   const [code, setCode] = useState('')
 
   const groups = useQuery({ queryKey: ['groups', user?.id], queryFn: () => listMyGroups(user!.id), enabled: !!user })
-  const saved = useQuery({ queryKey: ['saved-setlists'], queryFn: listSavedSetlists })
+  const saved = useQuery({
+    queryKey: ['saved-setlists'],
+    queryFn: async () => {
+      await removeExpiredSetlists()
+      return listSavedSetlists()
+    },
+  })
+  const unsave = useMutation({
+    mutationFn: removeSavedSetlist,
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: ['saved-setlists'] })
+      qc.invalidateQueries({ queryKey: ['saved', id] })
+    },
+  })
 
   const create = useMutation({
     mutationFn: () => createGroup(name.trim()),
@@ -48,6 +61,7 @@ export default function Groups() {
         }
       />
       <Page>
+        <UpdateNotice />
         {groups.isLoading && online ? (
           <PageSpinner />
         ) : groups.error && online ? (
@@ -83,6 +97,7 @@ export default function Groups() {
                 }}
               >
                 <Input
+                  aria-label="Código del grupo (6 letras o números)"
                   placeholder="ABC123"
                   value={code}
                   maxLength={6}
@@ -104,19 +119,30 @@ export default function Groups() {
 
         {!!saved.data?.length && (
           <section className="mt-8">
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Disponibles sin internet</h2>
-            <div className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Disponibles sin internet</h2>
+            <p className="mb-2 mt-1 text-xs text-slate-400">Guardadas en este celular. Se borran solas un mes después del servicio.</p>
+            <ul className="space-y-2">
               {saved.data.map((s) => (
-                <Link key={s.setlist.id} to={`/g/${s.setlist.group_id}/listas/${s.setlist.id}/presentar`} className="block">
-                  <Card className="active:bg-slate-800">
-                    <p className="font-semibold">{s.setlist.title}</p>
-                    <p className="text-xs text-slate-400">
-                      {s.groupName} · {formatServiceDate(s.setlist.service_date)} · {s.setlist.setlist_songs.length} canciones
-                    </p>
+                <li key={s.setlist.id}>
+                  <Card className="flex items-center gap-2 p-0!">
+                    <Link to={`/g/${s.setlist.group_id}/listas/${s.setlist.id}/presentar`} className="min-w-0 flex-1 rounded-2xl p-4 active:bg-slate-800">
+                      <p className="truncate font-semibold">{s.setlist.title}</p>
+                      <p className="text-xs text-slate-400">
+                        {s.groupName} · {formatServiceDate(s.setlist.service_date)} · {s.setlist.setlist_songs.length} canciones
+                      </p>
+                    </Link>
+                    <button
+                      className="mr-2 min-h-11 shrink-0 rounded-xl px-3 text-sm text-slate-300 active:bg-slate-800"
+                      aria-label={`Quitar «${s.setlist.title}» del celular`}
+                      disabled={unsave.isPending}
+                      onClick={() => confirm(`¿Quitar «${s.setlist.title}» del celular? Con internet la sigues viendo igual.`) && unsave.mutate(s.setlist.id)}
+                    >
+                      Quitar
+                    </button>
                   </Card>
-                </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
         )}
       </Page>

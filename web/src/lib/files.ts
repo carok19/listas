@@ -3,6 +3,7 @@
 import { Browser } from '@capacitor/browser'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { signedAudioUrl } from './api'
+import { pathExtension } from './audioFormat'
 import { cachedAudioBlob } from './offline'
 import { isNative } from './platform'
 import type { Song } from './types'
@@ -20,9 +21,9 @@ function safeName(s: string) {
     .slice(0, 100)
 }
 
-export function songFileName(song: Pick<Song, 'title' | 'artist'>, position?: number) {
+export function songFileName(song: Pick<Song, 'title' | 'artist' | 'audio_path'>, position?: number) {
   const base = safeName([song.title, song.artist].filter(Boolean).join(' - ')) || 'cancion'
-  return `${position ? `${String(position).padStart(2, '0')} - ` : ''}${base}.mp3`
+  return `${position ? `${String(position).padStart(2, '0')} - ` : ''}${base}.${pathExtension(song.audio_path)}`
 }
 
 async function audioBlob(path: string): Promise<Blob> {
@@ -62,7 +63,8 @@ async function saveNative(folder: string, name: string, blob: Blob) {
       throw new Error('Alabanza no tiene permiso para guardar archivos. Actívalo en Ajustes › Apps › Alabanza › Permisos.')
     }
     // Android 11+ no deja reemplazar un archivo creado por una instalación anterior de la app.
-    await writeDocument(`${folder}/${name.replace(/\.mp3$/i, '')} (${Date.now() % 100000}).mp3`, blob)
+    const dot = name.lastIndexOf('.')
+    await writeDocument(`${folder}/${name.slice(0, dot)} (${Date.now() % 100000})${name.slice(dot)}`, blob)
   }
 }
 

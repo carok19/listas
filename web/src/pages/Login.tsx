@@ -112,6 +112,7 @@ export default function Login() {
               required
               autoComplete="email"
               inputMode="email"
+              aria-label="Correo electrónico"
               placeholder="tucorreo@ejemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -123,6 +124,7 @@ export default function Login() {
                   required
                   minLength={6}
                   autoComplete="current-password"
+                  aria-label="Contraseña"
                   placeholder="Contraseña (mínimo 6)"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -152,7 +154,7 @@ export default function Login() {
             {mode === 'password' ? '¿Olvidaste tu contraseña? Entra con un enlace por correo' : 'Entrar con contraseña'}
           </button>
 
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-3 text-xs text-slate-400">
             <div className="h-px flex-1 bg-slate-800" /> o <div className="h-px flex-1 bg-slate-800" />
           </div>
           <Button variant="secondary" className="w-full bg-white text-slate-900 active:bg-slate-200" onClick={google} loading={loading === 'google'}>

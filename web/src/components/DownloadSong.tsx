@@ -10,7 +10,7 @@ export function DownloadSong({ song }: { song: Song }) {
   return (
     <div>
       <Button variant="secondary" className="w-full" loading={dl.isPending} onClick={() => dl.mutate()}>
-        ⬇ Descargar MP3
+        ⬇ Descargar audio
       </Button>
       {dl.isSuccess && (
         <p className="mt-2 text-center text-xs text-emerald-400">

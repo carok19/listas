@@ -100,8 +100,8 @@ export function LyricsSearch({
           search()
         }}
       >
-        <Input placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <Input placeholder="Artista (ayuda a encontrarla)" value={artist} onChange={(e) => setArtist(e.target.value)} />
+        <Input aria-label="Título" placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Input aria-label="Artista" placeholder="Artista (ayuda a encontrarla)" value={artist} onChange={(e) => setArtist(e.target.value)} />
         <Button type="submit" className="w-full" loading={searching} disabled={!title.trim()}>
           Buscar en letras.com y LRCLIB
         </Button>
@@ -124,7 +124,7 @@ export function LyricsSearch({
                     <p className="text-xs text-slate-400">{r.artist || 'Artista desconocido'}</p>
                   </div>
                   <Badge tone={r.source === 'letras' ? 'indigo' : 'slate'}>{SOURCE_LABEL[r.source]}</Badge>
-                  <span className="text-slate-500">{isOpen ? '▾' : '▸'}</span>
+                  <span className="text-slate-400">{isOpen ? '▾' : '▸'}</span>
                 </button>
                 {isOpen && (
                   <div className="mt-2">
@@ -171,7 +171,7 @@ export function LyricsSearch({
         {pasted.error && <div className="mt-2"><ErrorBox>{pasted.error}</ErrorBox></div>}
         {pasted.lyrics && (
           <Card className="mt-2 bg-slate-950 p-3">
-            {pasted.fromUrl && <p className="mb-1 truncate text-xs text-slate-500">Leída de {pasted.fromUrl}</p>}
+            {pasted.fromUrl && <p className="mb-1 truncate text-xs text-slate-400">Leída de {pasted.fromUrl}</p>}
             <p className="max-h-56 overflow-y-auto whitespace-pre-line text-sm text-slate-300">{pasted.lyrics}</p>
             <Button className="mt-2 w-full" variant="secondary" loading={saving} onClick={() => use(pasted.lyrics!)}>
               Usar esta letra

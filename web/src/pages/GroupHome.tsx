@@ -6,7 +6,7 @@ import { formatServiceDate } from '../lib/format'
 import { shareInvite } from '../lib/invite'
 import { WEB_URL } from '../lib/platform'
 import { useGroup } from '../hooks/useGroup'
-import { GroupsLink, Header, Page } from '../components/Layout'
+import { GroupsLink, Header, Page, UpdateNotice } from '../components/Layout'
 import { Button, Card, Empty, ErrorBox, PageSpinner } from '../components/ui'
 import { SongRowInfo } from '../components/SetlistSongs'
 
@@ -18,6 +18,7 @@ export default function GroupHome() {
     <>
       <Header title={group?.name ?? 'Grupo'} right={<GroupsLink />} />
       <Page>
+        <UpdateNotice />
         {error && <ErrorBox>{errorMessage(error)}</ErrorBox>}
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Próxima lista</h2>
         {next.isLoading ? (
@@ -36,7 +37,7 @@ export default function GroupHome() {
           </Empty>
         ) : (
           <Card>
-            <p className="text-xs capitalize text-indigo-300">{formatServiceDate(next.data.service_date)}</p>
+            <p className="text-xs text-indigo-300 first-letter:uppercase">{formatServiceDate(next.data.service_date)}</p>
             <p className="text-xl font-bold">{next.data.title}</p>
             {next.data.notes && <p className="mt-1 whitespace-pre-line text-sm text-slate-400">{next.data.notes}</p>}
             <ul className="mt-3 space-y-2">
@@ -47,7 +48,7 @@ export default function GroupHome() {
                   </Link>
                 </li>
               ))}
-              {next.data.setlist_songs.length === 0 && <li className="text-sm text-slate-500">Aún no tiene canciones.</li>}
+              {next.data.setlist_songs.length === 0 && <li className="text-sm text-slate-400">Aún no tiene canciones.</li>}
             </ul>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Link to={`/g/${groupId}/listas/${next.data.id}/presentar`}>
@@ -80,10 +81,10 @@ export default function GroupHome() {
             <p className="font-semibold">Invita a tu equipo</p>
             <p className="mt-1 text-xs text-slate-400">
               Les llega {WEB_URL ? 'el link de la app' : 'el link para descargar la app (Android)'} y el código{' '}
-              <span className="font-mono font-bold text-indigo-300">{group.invite_code}</span>. Así ven las canciones y listas, y descargan los MP3.
+              <span className="font-mono font-bold text-indigo-300">{group.invite_code}</span>. Así ven las canciones y listas, y escuchan o descargan los audios.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button className="bg-emerald-600! active:bg-emerald-700!" onClick={() => shareInvite(group)}>
+              <Button className="bg-emerald-700! active:bg-emerald-800!" onClick={() => shareInvite(group)}>
                 WhatsApp
               </Button>
               <Link to={`/g/${groupId}/ajustes`}>
@@ -92,6 +93,10 @@ export default function GroupHome() {
             </div>
           </Card>
         )}
+
+        <Link to={`/g/${groupId}/ayuda`} className="mt-4 flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm text-indigo-300 underline-offset-4 active:bg-slate-900 hover:underline">
+          <span aria-hidden>❔</span> ¿Cómo se usa la app?
+        </Link>
       </Page>
     </>
   )

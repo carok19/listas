@@ -45,7 +45,7 @@ export default function Setlists() {
         <Link key={s.id} to={`/g/${groupId}/listas/${s.id}`} className="block">
           <Card className="active:bg-slate-800">
             <p className="font-semibold">{s.title}</p>
-            <p className="text-xs capitalize text-slate-400">
+            <p className="text-xs text-slate-400 first-letter:uppercase">
               {formatServiceDate(s.service_date)} · {s.setlist_songs?.length ?? 0} canciones
             </p>
           </Card>

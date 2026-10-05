@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteSong, getSong, updateSong, uploadSongAudio } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import { getJob, startDownload, type Job } from '../lib/downloader'
+import { retryOnDevice, type Progress } from '../lib/addFromVideo'
+import { youtubeOnDevice } from '../lib/youtube'
+import { AUDIO_ACCEPT } from '../lib/audioFormat'
 import { findLyricsAuto, SOURCE_LABEL } from '../lib/lyrics'
 import { hasAudio } from '../lib/files'
 import { formatDuration } from '../lib/format'
@@ -108,17 +111,22 @@ export default function SongDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song.data?.id, song.data?.audio_status, isAdmin])
 
+  // En la APK el audio se baja en el celular; en la web, con el servicio de descarga.
+  const [retryProgress, setRetryProgress] = useState<Progress | null>(null)
   const retry = useMutation({
-    mutationFn: async (s: Song) => {
+    mutationFn: async (s: Song): Promise<{ song?: Song; job?: Job }> => {
+      if (youtubeOnDevice) return { song: await retryOnDevice(s, setRetryProgress) }
       await updateSong(s.id, { audio_status: 'processing', audio_error: null })
-      return startDownload(s.source_url!, s.id, false)
+      return { job: await startDownload(s.source_url!, s.id, false) }
     },
-    onSuccess: (j) => {
-      setParams({ job: j.id }, { replace: true })
-      refresh()
+    onSuccess: (r) => {
+      setRetryProgress(null)
+      if (r.job) setParams({ job: r.job.id }, { replace: true })
+      refresh(r.song)
     },
     onError: async (e) => {
-      await updateSong(songId, { audio_status: 'error', audio_error: errorMessage(e) }).catch(() => {})
+      setRetryProgress(null)
+      if (!youtubeOnDevice) await updateSong(songId, { audio_status: 'error', audio_error: errorMessage(e) }).catch(() => {})
       refresh()
     },
   })
@@ -199,20 +207,33 @@ export default function SongDetail() {
                 </div>
               ) : hasAudio(s) ? (
                 <DownloadSong song={s} />
+              ) : retryProgress ? (
+                <div role="status" aria-live="polite" className="flex items-center gap-3 text-sm text-indigo-200">
+                  <Spinner small />
+                  <span className="flex-1">
+                    {retryProgress.label}
+                    {retryProgress.percent != null && ` ${Math.round(retryProgress.percent)}%`}
+                  </span>
+                  {retryProgress.cancel && (
+                    <Button variant="ghost" className="min-h-9 py-1" onClick={retryProgress.cancel}>Cancelar</Button>
+                  )}
+                </div>
+              ) : retry.error && youtubeOnDevice ? (
+                <ErrorBox>{errorMessage(retry.error)}</ErrorBox>
               ) : audioError ? (
                 <ErrorBox>{audioError}</ErrorBox>
               ) : (
                 <p className="text-sm text-slate-400">Esta canción aún no tiene audio.</p>
               )}
 
-              {isAdmin && s.audio_status !== 'processing' && (
+              {isAdmin && s.audio_status !== 'processing' && !retryProgress && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <label className="inline-flex min-h-11 cursor-pointer items-center rounded-xl bg-slate-800 px-4 text-sm font-semibold active:bg-slate-700">
-                    {upload.isPending ? <Spinner small /> : s.audio_path ? 'Reemplazar MP3' : 'Sube el MP3 manualmente'}
+                  <label className="inline-flex min-h-11 cursor-pointer items-center rounded-xl bg-slate-800 px-4 text-sm font-semibold focus-within:ring-2 focus-within:ring-indigo-400 active:bg-slate-700">
+                    {upload.isPending ? <Spinner small /> : s.audio_path ? 'Reemplazar audio' : 'Subir el audio'}
                     <input
                       type="file"
-                      accept="audio/mpeg,audio/mp3,.mp3"
-                      className="hidden"
+                      accept={AUDIO_ACCEPT}
+                      className="sr-only"
                       disabled={upload.isPending}
                       onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])}
                     />
@@ -222,19 +243,29 @@ export default function SongDetail() {
                       Reintentar descarga
                     </Button>
                   )}
+                  {!hasAudio(s) && (
+                    <Button
+                      variant="ghost"
+                      className="text-red-300!"
+                      loading={remove.isPending}
+                      onClick={() => confirm('¿Borrar esta canción? También se quitará de las listas.') && remove.mutate()}
+                    >
+                      Borrar canción
+                    </Button>
+                  )}
                 </div>
               )}
               {isAdmin && s.audio_status === 'processing' && (
-                <button className="mt-2 text-xs text-slate-500 underline" onClick={() => updateSong(s.id, { audio_status: 'error', audio_error: 'Descarga cancelada.' }).then(refresh)}>
+                <button className="mt-2 text-xs text-slate-400 underline" onClick={() => updateSong(s.id, { audio_status: 'error', audio_error: 'Descarga cancelada.' }).then(refresh)}>
                   ¿Se quedó trabado? Cancelar
                 </button>
               )}
-              {upload.error && <div className="mt-2"><ErrorBox>{errorMessage(upload.error)}</ErrorBox></div>}
+              {(upload.error || remove.error) && <div className="mt-2"><ErrorBox>{errorMessage(upload.error ?? remove.error)}</ErrorBox></div>}
             </Card>
 
             {s.notes && (
               <Card className="mt-3">
-                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Notas</p>
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Notas</p>
                 <p className="whitespace-pre-line text-sm">{s.notes}</p>
               </Card>
             )}
@@ -245,8 +276,8 @@ export default function SongDetail() {
                 <h2 className="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Letra</h2>
                 {s.lyrics?.trim() && (
                   <>
-                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize - 2)} aria-label="Letra más pequeña">A−</button>
-                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize + 2)} aria-label="Letra más grande">A+</button>
+                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize - 2)} aria-label="Letra más pequeña, A−">A−</button>
+                    <button className="h-9 rounded-full px-2 text-sm font-bold text-slate-300 active:bg-slate-800" onClick={() => setTextSize(textSize + 2)} aria-label="Letra más grande, A+">A+</button>
                   </>
                 )}
                 {isAdmin && (
@@ -259,12 +290,12 @@ export default function SongDetail() {
               {s.lyrics?.trim() ? (
                 <p className="whitespace-pre-line leading-relaxed" style={{ fontSize: textSize }}>{s.lyrics}</p>
               ) : (
-                <p className="text-sm text-slate-500">Sin letra todavía.</p>
+                <p className="text-sm text-slate-400">Sin letra todavía.</p>
               )}
             </div>
 
             {s.source_url && (
-              <a href={s.source_url} target="_blank" rel="noreferrer" className="mt-6 block truncate text-xs text-slate-500 underline">
+              <a href={s.source_url} target="_blank" rel="noreferrer" className="mt-6 block truncate text-xs text-slate-400 underline">
                 Origen: {s.source_url}
               </a>
             )}

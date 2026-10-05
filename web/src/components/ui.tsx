@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
 
@@ -35,7 +35,7 @@ export function Input({ label, className = '', ...props }: InputHTMLAttributes<H
       {label && <span className="mb-1 block text-xs font-medium text-slate-400">{label}</span>}
       <input
         {...props}
-        className={`w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 ${className}`}
+        className={`w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-base text-slate-100 placeholder-slate-400 outline-none focus:border-indigo-500 ${className}`}
       />
     </label>
   )
@@ -51,7 +51,7 @@ export function Textarea({
       {label && <span className="mb-1 block text-xs font-medium text-slate-400">{label}</span>}
       <textarea
         {...props}
-        className={`w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 ${className}`}
+        className={`w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-base text-slate-100 placeholder-slate-400 outline-none focus:border-indigo-500 ${className}`}
       />
     </label>
   )
@@ -97,21 +97,39 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
 }
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  // onClose cambia en cada render; con un ref el efecto corre solo al abrir y cerrar.
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  })
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    // Foco dentro del diálogo al abrir (lectores de pantalla y teclado) y de vuelta al cerrar.
+    const previous = document.activeElement as HTMLElement | null
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      previous?.focus?.()
+    }
+  }, [open])
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <div
-        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-900 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-900 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] outline-none sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">{title}</h2>
+          <h2 id={titleId} className="text-lg font-bold">{title}</h2>
           <button onClick={onClose} className="h-10 w-10 rounded-full text-2xl text-slate-400 active:bg-slate-800" aria-label="Cerrar">
             ×
           </button>

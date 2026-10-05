@@ -19,6 +19,11 @@ export function defaultSetlistTitle(iso: string) {
   return `${wd.charAt(0).toUpperCase()}${wd.slice(1)} ${d} ${mon}`
 }
 
+/** Para buscar: sin acentos ni mayúsculas ("cancion" encuentra "Canción"). */
+export function foldText(s: string) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 /** Para comparar títulos: sin acentos, mayúsculas, signos ni "(En vivo)". */
 export function normalizeTitle(s: string) {
   return s
@@ -30,10 +35,10 @@ export function normalizeTitle(s: string) {
     .trim()
 }
 
-/** Título y artista a partir del nombre de un MP3 ("01 - Artista - Canción.mp3"). */
+/** Título y artista a partir del nombre del archivo ("01 - Artista - Canción.mp3"). */
 export function guessFromFileName(name: string) {
   const base = name
-    .replace(/\.mp3$/i, '')
+    .replace(/\.(mp3|m4a|mp4|aac|ogg|opus|webm|wav)$/i, '')
     .replace(/_/g, ' ')
     .replace(/^\s*(?:\d{1,3}\s*[-.)]\s*|0\d\s+)/, '')
     .trim()

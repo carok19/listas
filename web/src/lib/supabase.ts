@@ -24,6 +24,6 @@ export function errorMessage(err: unknown): string {
   return msg
 }
 
-export function audioPathFor(groupId: string, songId: string) {
-  return `${groupId}/${songId}.mp3`
+export function audioPathFor(groupId: string, songId: string, ext = 'mp3') {
+  return `${groupId}/${songId}.${ext}`
 }

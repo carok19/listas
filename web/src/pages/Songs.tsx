@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listSongs } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
+import { foldText } from '../lib/format'
 import { useGroup } from '../hooks/useGroup'
 import { Header, Page } from '../components/Layout'
 import { Badge, Button, Empty, ErrorBox, Input, PageSpinner } from '../components/ui'
@@ -12,12 +13,15 @@ export default function Songs() {
   const [q, setQ] = useState('')
   const songs = useQuery({ queryKey: ['songs', groupId], queryFn: () => listSongs(groupId) })
 
+  // Texto de búsqueda de cada canción, sin acentos, calculado una sola vez.
+  const searchable = useMemo(
+    () => (songs.data ?? []).map((s) => ({ song: s, text: foldText(`${s.title}\n${s.artist ?? ''}\n${s.lyrics ?? ''}`) })),
+    [songs.data],
+  )
   const filtered = useMemo(() => {
-    const n = q.trim().toLowerCase()
-    return (songs.data ?? []).filter(
-      (s) => !n || s.title.toLowerCase().includes(n) || s.artist?.toLowerCase().includes(n) || s.lyrics?.toLowerCase().includes(n),
-    )
-  }, [songs.data, q])
+    const n = foldText(q.trim())
+    return searchable.filter((x) => !n || x.text.includes(n)).map((x) => x.song)
+  }, [searchable, q])
 
   return (
     <>
@@ -32,7 +36,13 @@ export default function Songs() {
         }
       />
       <Page>
-        <Input placeholder="Buscar por título, artista o letra…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input
+          type="search"
+          aria-label="Buscar canciones"
+          placeholder="Buscar por título, artista o letra…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <div className="mt-3">
           {songs.isLoading ? (
             <PageSpinner />
@@ -40,17 +50,19 @@ export default function Songs() {
             <ErrorBox>{errorMessage(songs.error)}</ErrorBox>
           ) : songs.data?.length === 0 ? (
             <Empty title="La biblioteca está vacía">
-              {isAdmin ? 'Toca "+ Agregar" y sube tus MP3 (puedes elegir varios a la vez). La letra se busca sola.' : 'El director aún no agregó canciones.'}
+              {isAdmin ? 'Toca "+ Agregar" para buscarlas en YouTube o subir tus MP3 (varios a la vez). La letra se busca sola.' : 'El director aún no agregó canciones.'}
             </Empty>
+          ) : filtered.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">Ninguna canción coincide con «{q.trim()}».</p>
           ) : (
-            <ul className="divide-y divide-slate-800">
+            <ul className="divide-y divide-slate-800" aria-label={`${filtered.length} canciones`}>
               {filtered.map((s) => (
                 <li key={s.id}>
                   <Link to={s.id} className="flex items-center gap-3 py-3 active:bg-slate-900">
                     {s.thumbnail_url ? (
                       <img src={s.thumbnail_url} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" loading="lazy" />
                     ) : (
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-lg text-slate-500">♪</div>
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-lg text-slate-400">♪</div>
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{s.title}</p>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Clipboard } from '@capacitor/clipboard'
@@ -8,6 +8,7 @@ import { errorMessage, supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { APK_DOWNLOAD_URL, WEB_URL } from '../lib/platform'
 import { inviteLink as linkFor, inviteText, shareInvite } from '../lib/invite'
+import { installedVersion } from '../lib/update'
 import { useGroup } from '../hooks/useGroup'
 import { GroupsLink, Header, Page } from '../components/Layout'
 import { Badge, Button, Card, ErrorBox, Input, Modal, PageSpinner } from '../components/ui'
@@ -25,6 +26,7 @@ export default function GroupSettings() {
   const [name, setName] = useState<string | null>(null)
 
   const members = useQuery({ queryKey: ['members', groupId], queryFn: () => listMembers(groupId) })
+  const version = useQuery({ queryKey: ['app-version'], queryFn: installedVersion, staleTime: Infinity })
 
   const inviteLink = group ? linkFor(group) : ''
   const shareText = group ? inviteText(group) : ''
@@ -98,7 +100,7 @@ export default function GroupSettings() {
             </div>
           ) : (
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); rename.mutate() }}>
-              <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+              <Input aria-label="Nombre del grupo" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
               <Button type="submit" loading={rename.isPending} disabled={!name.trim()}>OK</Button>
             </form>
           )}
@@ -112,13 +114,13 @@ export default function GroupSettings() {
           </button>
           <p className="h-4 text-center text-xs text-emerald-400">{copied === 'code' ? '¡Código copiado!' : copied === 'link' ? '¡Link copiado!' : ''}</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <Button className="bg-emerald-600! active:bg-emerald-700!" onClick={() => shareInvite(group)}>WhatsApp</Button>
+            <Button className="bg-emerald-700! active:bg-emerald-800!" onClick={() => shareInvite(group)}>WhatsApp</Button>
             <Button variant="secondary" onClick={() => setQrOpen(true)}>QR</Button>
             <Button variant="secondary" onClick={() => copy(WEB_URL ? inviteLink : shareText, 'link')}>Copiar link</Button>
           </div>
           {isAdmin && (
             <button
-              className="mt-3 w-full text-center text-xs text-slate-500 underline"
+              className="mt-3 w-full text-center text-xs text-slate-400 underline"
               onClick={() => confirm('El código y link anteriores dejarán de funcionar. ¿Continuar?') && regen.mutate()}
             >
               {regen.isPending ? 'Generando…' : 'Generar un código nuevo'}
@@ -147,7 +149,7 @@ export default function GroupSettings() {
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">
-                        {m.profiles?.display_name ?? 'Sin nombre'} {me && <span className="text-xs text-slate-500">(tú)</span>}
+                        {m.profiles?.display_name ?? 'Sin nombre'} {me && <span className="text-xs text-slate-400">(tú)</span>}
                       </p>
                       <Badge tone={m.role === 'admin' ? 'indigo' : 'slate'}>{m.role === 'admin' ? 'Admin / director' : 'Miembro'}</Badge>
                     </div>
@@ -175,6 +177,9 @@ export default function GroupSettings() {
         )}
 
         <div className="mt-8 space-y-2">
+          <Link to={`/g/${groupId}/ayuda`} className="block">
+            <Button variant="secondary" className="w-full">❔ ¿Cómo se usa la app?</Button>
+          </Link>
           <Button variant="secondary" className="w-full" onClick={() => confirm('¿Salir de este grupo?') && kick.mutate(user!.id)}>
             Salir del grupo
           </Button>
@@ -195,6 +200,7 @@ export default function GroupSettings() {
             Cerrar sesión
           </Button>
         </div>
+        {version.data && <p className="mt-6 text-center text-xs text-slate-400">Alabanza · versión {version.data}</p>}
       </Page>
 
       <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="Escanea para unirte">
